@@ -1,0 +1,150 @@
+---
+title: "Exploratory Analysis"
+author: "Dima"
+date: "`r Sys.Date()`"
+output: 
+  html_document: 
+    number_sections: yes
+    toc: yes
+---
+
+```{r setup, echo=FALSE, message=FALSE, warning=FALSE}
+library(dplyr)
+library(njtPredict)
+library(lubridate)
+library(ggplot2)
+# library(broom)
+library(tidyr)
+library(knitr)
+# devtools::load_all()
+ 
+opts_chunk$set(echo = TRUE,
+               message = FALSE,
+               prompt = FALSE,
+               warning = FALSE,
+               cache = TRUE, 
+               fig.width = 14,
+               fig.height = 8)
+
+```
+
+```{r load_data, cache = TRUE}
+data("njt_features")
+```
+
+# Overview  
+The purpose of this notebook is to characterize & explore the njt data and weather data.  
+
+
+# Exploring General Attributes  
+
+```{r general_attr}
+njt_features %>% 
+  count(Line, is_delayed) %>% 
+  spread(is_delayed, n) %>%
+  mutate(pct_delays = Yes/(No+Yes)*100) %>%
+  arrange(desc(pct_delays)) %>%
+  kable
+```
+
+Not suprisingly, Corridor has the most amount of delays.  
+
+# Exploring Calendar Attributes  
+
+## Delays By Day of Weekday/Line
+```{r delay_weekday_line}
+njt_features %>% 
+  count(Line, dep_wday, is_delayed) %>% 
+  spread(is_delayed,n) %>% 
+  mutate(pct_delays = Yes/(No+Yes)*100) %>% 
+  ggplot(aes(dep_wday, pct_delays)) + 
+  geom_bar(stat="identity") + 
+  facet_wrap(~Line, scale = "free", ncol = 5) +
+  theme_classic()
+```
+
+## Delays By Day of Month/Line  
+```{r delay_month_line}
+njt_features %>% 
+  count(Line, dep_mon, is_delayed) %>% 
+  spread(is_delayed,n) %>% 
+  mutate(pct_delays = Yes/(No+Yes)*100) %>% 
+  ggplot(aes(dep_mon, pct_delays)) + 
+  geom_bar(stat="identity") + 
+  facet_wrap(~Line, scale = "free_y", ncol = 5) +
+  theme_classic()
+```
+
+## Delays By Day of Hour/Line  
+```{r delay_hour_line}
+njt_features %>% 
+  count(Line, dep_hour, is_delayed) %>% 
+  spread(is_delayed,n) %>% 
+  mutate(pct_delays = Yes/(No+Yes)*100) %>% 
+  ggplot(aes(dep_hour, pct_delays)) + 
+  geom_bar(stat="identity") + 
+  facet_wrap(~Line, scale = "free_y", ncol = 5) +
+  theme_classic()
+```
+
+## Time to Last Delay  
+### Fraction of delays when previous delay occurred in the last 90 minutes
+```{r delay_window}
+previous_delay_window = 90
+```
+
+#### Using any delay on the line  
+```{r time_tolast_line}
+njt_features %>% mutate(prdelay = ttl_line <= previous_delay_window) %>% 
+  filter(!is.na(prdelay)) %>% 
+  count(Line, prdelay, is_delayed) %>%
+  spread(is_delayed,n) %>% 
+  mutate(pct_delays = Yes/(No+Yes)*100) %>% 
+  ggplot(aes(prdelay, pct_delays)) + 
+  geom_bar(stat="identity", position = "dodge") + 
+  facet_wrap(~Line, scale = "free_y", ncol = 5) +
+  theme_classic() +
+  xlab(paste("Delay Occurred withing the last",previous_delay_window,"minutes")) +
+  ylab("% of all Trains")
+```
+
+#### Using delays with fixed departure
+```{r time_tolast_linedep}
+njt_features %>% mutate(prdelay = ttl_dep_line <= previous_delay_window) %>% 
+  filter(!is.na(prdelay)) %>% 
+  count(Line, prdelay, is_delayed) %>%
+  spread(is_delayed,n) %>% 
+  mutate(pct_delays = Yes/(No+Yes)*100) %>% 
+  ggplot(aes(prdelay, pct_delays)) + 
+  geom_bar(stat="identity", position = "dodge") + 
+  facet_wrap(~Line, scale = "free_y", ncol = 5) +
+  theme_classic() +
+  xlab(paste("Delay Occurred withing the last",previous_delay_window,"minutes")) +
+  ylab("% of all Trains")
+```
+
+#### Using delays with fixed departure & arrival
+```{r time_tolast_linedepari}
+njt_features %>% mutate(prdelay = ttl_dep_arv_line <= previous_delay_window) %>% 
+  filter(!is.na(prdelay)) %>% 
+  count(Line, prdelay, is_delayed) %>%
+  spread(is_delayed,n) %>% 
+  mutate(pct_delays = Yes/(No+Yes)*100) %>% 
+  ggplot(aes(prdelay, pct_delays)) + 
+  geom_bar(stat="identity", position = "dodge") + 
+  facet_wrap(~Line, scale = "free_y", ncol = 5) +
+  theme_classic() +
+  xlab(paste("Delay Occurred withing the last",previous_delay_window,"minutes")) +
+  ylab("% of all Trains")
+```
+
+# Using Weather Data  
+```{r}
+
+```
+
+
+# Comparing Reasons
+## NJT vs Amtrak
+
+## Types of Delays

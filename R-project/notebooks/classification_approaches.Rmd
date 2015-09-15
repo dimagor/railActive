@@ -1,0 +1,102 @@
+---
+title: "Classification Approaches"
+author: "Dima"
+date: "September 14, 2015"
+output: html_document
+---
+
+```{r setup, echo=FALSE, message=FALSE, warning=FALSE}
+library(dplyr)
+library(njtPredict)
+library(lubridate)
+library(ggplot2)
+library(tidyr)
+library(knitr)
+library(caret)
+# devtools::load_all() #Toggle if not in the mood to rebuild after change
+data("njt_features")
+
+opts_chunk$set(echo = TRUE,
+               message = FALSE,
+               prompt = FALSE,
+               warning = FALSE,
+               cache = TRUE)
+```
+
+```{r feature_cleanup}
+tr_ctrl <- trainControl(method="cv", number=5, savePred = TRUE, classProb = TRUE)
+
+tr_data <- njt_features %>% 
+  # select(is_delayed, Line, dep_hour, dep_mon, dep_wday, prdelay, Temp_F, Visibility, WindSpeed, HourlyPrecip) %>%
+  ungroup %>% 
+  mutate(Line = gsub(" " , "_", Line),
+         is_delayed = factor(is_delayed, levels = c(TRUE,FALSE), labels = c("Yes","No"))) %>% 
+  select(-Actual_End_Time, -delay_length, -ttl_dep_arv_line) # Need to remove this field for the complete.cases function (not a feature I'll use anyway)
+tr_data <- tr_data[complete.cases(tr_data), ] #Removes only about 8K entries
+
+#Using downsampling per "Line" to account for the Unbalanced training data
+tr_ds <- tr_data %>% group_by(Line) %>% do(downSample(., .$is_delayed))
+
+#Alternative is to downsample the whole dataset, but this would result in negatives mostly coming from lines with MANY entries
+# tr_data <- downSample(tr_data, tr_data$is_delayed)
+```
+
+
+```{r logit}
+formula = is_delayed ~ Line +
+  as.factor(dep_hour) + 
+  as.character(dep_wday) + 
+  ttl_line + 
+  Temp_F + 
+  Visibility + 
+  WindSpeed + 
+  HourlyPrecip
+logit_fit <- train(formula, data = tr_ds, method = "glm", family = "binomial", trControl = tr_ctrl)
+logit_pred <-  predict(logit_fit, tr_ds)
+confusionMatrix(logit_pred, tr_ds$is_delayed)
+summary(logit_fit)
+```
+
+```{r}
+formula = is_delayed ~ Line + as.factor(dep_hour) + dep_wday + ttl_line + Temp_F + Visibility + WindSpeed + HourlyPrecip
+lasso_fit <- train(formula, data = tr_ds, method = "glmnet", family = "binomial", trControl = tr_ctrl)
+lasso_pred <-  predict(logit_fit, tr_ds)
+confusionMatrix(lasso_pred, tr_ds$is_delayed)
+plot(lasso_fit)
+```
+
+
+
+
+
+# Scratch ---------
+
+
+```{r}
+# library(doMC)
+# registerDoMC(cores = 3)
+# glm_binom <- glm(is_delayed ~ Line + dep_hour + dep_mon + dep_wday + ttl_line + Temp_F + Visibility + WindSpeed + HourlyPrecip,
+    # family = "binomial",
+    # data = tr_data)
+rf_train <- train(is_delayed ~ dep_hour + prdelay, 
+                  data = tr_data, 
+                  method = "rf", 
+                  trControl=trainControl(method="cv",number=3),
+                  prox=TRUE, allowParallel=TRUE )
+rf_pred <-  predict(rf_train, tr_data)
+confusionMatrix(rf_pred, tr_data$is_delayed)
+```
+
+#Downsamples  /Reweighting
+
+```{r}
+
+svm_train <- train(is_delayed ~  prdelay + Temp_F, 
+                  data = tr_data, 
+                  method = "svmLinear", 
+                  trControl=trainControl(method="cv",number=3, savePred = TRUE, classProb = TRUE),
+                  allowParallel=TRUE )
+svm_pred <-  predict(svm_train, tr_data)
+confusionMatrix(svm_pred, tr_data$is_delayed)
+```
+

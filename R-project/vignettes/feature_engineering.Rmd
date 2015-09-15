@@ -1,0 +1,146 @@
+---
+title: "Feature Engineering"
+author: "Dmitriy Gorenshteyn"
+date: "`r Sys.Date()`"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Vignette Title}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, echo=FALSE, message=FALSE, warning=FALSE}
+library(dplyr)
+library(stringr)
+# library(njtPredict)
+library(lubridate) #Make sure the latest version is installed to avoid the round error
+devtools::load_all()
+data("njt_trains")
+opts_chunk$set(echo = TRUE,
+               message = FALSE,
+               prompt = FALSE,
+               warning = FALSE,
+               cache = FALSE,
+               eval = FALSE)
+
+```
+
+# Overview  
+
+
+### Source  
+This data was obtained directly from NJT and contains ~5 years of departure & arrival times for NJT trains.  
+
+### Description of Fields  
+
+
+
+# Binary Delay (10 Minutes or More)  
+```{r features_base}
+delay_thresh = 10
+
+njt_features <- njt_trains %>%
+  mutate(delay_length = as.numeric(difftime(Scheduled_End_Time,Actual_End_Time, units = "mins")),
+         #Ignore early arrivals
+         delay_length = ifelse(delay_length < 0, 0, delay_length), 
+         # NA's are likely cancellations, consider them as part of delays
+         is_delayed = delay_length >= delay_thresh | is.na(delay_length)) %>% 
+  group_by(Line) %>% 
+  mutate(round_time = round_date(Scheduled_Start_Time, unit = "hour"), # Used as key to match to weather
+         #Date Features
+         dep_hour = hour(round_time),
+         dep_mon = month(round_time, label = TRUE),
+         dep_wday = wday(round_time, label = TRUE))
+```
+
+```{r feat_last_delay}
+getLastDelay <- function(df, group = "Line"){
+  #Set Max Time to prevent NA's and the very far delays  
+  max_delay <- 24 * 60 #24 Hours
+  #Great solution adapted from http://stackoverflow.com/questions/30391333/calculate-days-since-last-event-in-r
+  df <- df[order(df$Scheduled_Start_Time, decreasing = FALSE),]
+  last_event_index <- cumsum(df$is_delayed) + 1
+  
+  # shift it by one to the right
+  last_event_index <- c(1, last_event_index[1:length(last_event_index) - 1])
+  
+  # get the dates of the events and index the vector with the last_event_index, 
+  # added an NA as the first date because there was no event
+  last_event_date <- c(as.POSIXct(NA), df[which(df$is_delayed), "Scheduled_Start_Time"])[last_event_index]
+  
+  # substract the event's date with the date of the last event
+  
+  last_delay <- difftime(df$Scheduled_Start_Time, last_event_date, units = "mins")
+  last_delay_fixed <- pmin(last_delay, max_delay)
+  last_delay_fixed[is.na(last_delay_fixed)] <- max_delay
+  
+  df[,paste0("ttl_",group)] <- last_delay_fixed
+  df
+}
+njt_features <- njt_features %>% 
+  group_by(Line) %>% do(getLastDelay(. ,group = "line")) %>% #Delay length on line
+  group_by(Line, Scheduled_Departure_Terminal) %>% do(getLastDelay(., group = "dep_line")) %>% #Delay length considering departure station
+  group_by(Line, Scheduled_Departure_Terminal, Actual_Arrival_Terminal) %>% do(getLastDelay(., group = "dep_arv_line")) #Delay length considering both departure & arrival station
+
+```
+
+```{r weather_hourly}
+data("weather_hourly")
+weather_hourly_newark <- filter(weather_hourly, WBAN == 14734) %>% 
+  mutate(round_time = round_date(Time,unit = "hour")) %>% 
+  select(round_time, Visibility, Temp_F = DryBulbFarenheit, Temp_C = DryBulbCelsius, WindSpeed, HourlyPrecip) %>% 
+  mutate(Visibility = as.numeric(Visibility),
+         Temp_F = as.numeric(Temp_F),
+         Temp_C = as.numeric(Temp_C),
+         WindSpeed = as.numeric(WindSpeed),
+         HourlyPrecip = as.numeric(HourlyPrecip)) %>% 
+  group_by(round_time) %>% 
+  slice(1) #Take only the first entry when more than one entry exists per hour
+njt_features <- inner_join(njt_features, weather_hourly_newark, by = "round_time")
+```
+
+```{r split_reasons}
+# Need to incorporate this to the previous step where the last delay reason is used (or possibly last reported reason)
+reason_types <- njt_features  %>% 
+  filter(Delay_Reason != "") %>%
+  count(Delay_Reason) %>%
+  select(Delay_Reason) %>% 
+  mutate(reason_entity = gsub("\\.","", word(Delay_Reason,1)),
+         reason_type = word(Delay_Reason,start = 2, end = -1))
+njt_features <- left_join(njt_features, reason_types, by = "Delay_Reason")
+
+# Fix NA for use in completecases later
+njt_features <- njt_features %>% mutate(reason_entity = ifelse(is.na(reason_entity),"",reason_entity),
+                                        reason_type = ifelse(is.na(reason_type),"",reason_type))
+
+```
+
+
+```{r save_base}
+devtools::use_data(njt_features, overwrite = TRUE)
+```
+
+# Store to MySQL (MVP)  
+```{r prep_data}
+sql_data <- njt_features %>% 
+  ungroup %>% 
+  mutate(Line = gsub(" " , "_", Line),
+         is_delayed = factor(is_delayed, levels = c(TRUE,FALSE), labels = c("Yes","No"))) %>% 
+  mutate(dep_mon = as.character(dep_mon),
+         dep_wday = as.character(dep_wday))
+
+```
+
+## Temporary solution to send the features to python  
+
+... will eventually migrate all of this to python and repeat future steps back here...
+
+```{r data_to_sql}
+my_db <- src_mysql("njtfeatures", create = T)
+features_mysql <- copy_to(my_db, sql_data, temporary = FALSE, indexes = list("Scheduled_Start_Time", "Line"))
+```
+
+
+# Additional Features to Consider  
+* Number of stops the train takes  
+* May be more general grouping, 
