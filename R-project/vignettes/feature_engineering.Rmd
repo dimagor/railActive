@@ -37,6 +37,7 @@ This data was obtained directly from NJT and contains ~5 years of departure & ar
 
 # Binary Delay (10 Minutes or More)  
 ```{r features_base}
+data("njt_trains")
 delay_thresh = 10
 
 njt_features <- njt_trains %>%
@@ -80,7 +81,8 @@ getLastDelay <- function(df, group = "Line"){
 njt_features <- njt_features %>% 
   group_by(Line) %>% do(getLastDelay(. ,group = "line")) %>% #Delay length on line
   group_by(Line, Scheduled_Departure_Terminal) %>% do(getLastDelay(., group = "dep_line")) %>% #Delay length considering departure station
-  group_by(Line, Scheduled_Departure_Terminal, Actual_Arrival_Terminal) %>% do(getLastDelay(., group = "dep_arv_line")) #Delay length considering both departure & arrival station
+  group_by(Line, Scheduled_Departure_Terminal, Actual_Arrival_Terminal) %>% do(getLastDelay(., group = "dep_arv_line")) %>% 
+group_by(Line, Actual_Arrival_Terminal) %>% do(getLastDelay(., group = "arv_line"))#Delay length only arrival station 
 
 ```
 
@@ -96,6 +98,10 @@ weather_hourly_newark <- filter(weather_hourly, WBAN == 14734) %>%
          HourlyPrecip = as.numeric(HourlyPrecip)) %>% 
   group_by(round_time) %>% 
   slice(1) #Take only the first entry when more than one entry exists per hour
+weather_hourly_newark[,-1] <- apply(weather_daily_newark[,-1],2, function(f){
+  f[f == "M"] <- NA
+  f[f == "  T"] <- 0
+  f}) 
 njt_features <- inner_join(njt_features, weather_hourly_newark, by = "round_time")
 ```
 
@@ -120,6 +126,34 @@ njt_features <- njt_features %>% mutate(reason_entity = ifelse(is.na(reason_enti
 devtools::use_data(njt_features, overwrite = TRUE)
 ```
 
+
+# Daily Features
+```{r daily_features}
+njt_featdaily <- njt_features %>% 
+  group_by(Run_Date, Line) %>% 
+  summarise(number_delays = sum(is_delayed)) %>% 
+  mutate(dep_mon = month(Run_Date, label = TRUE),
+         dep_wday = wday(Run_Date, label = TRUE))
+
+```
+
+```{r daily_weather}
+data("weather_daily")
+weather_daily_newark <- filter(weather_daily, WBAN == 14734)
+weather_daily_newark <- weather_daily_newark %>% 
+  select(Run_Date = YearMonthDay,
+         Tmax, Tmin, Tavg, PrecipTotal, SnowFall, WindSpeed = Max5Speed)
+weather_daily_newark[,-1] <- apply(weather_daily_newark[,-1],2, function(f){
+  f[f == "M"] <- NA
+  f[f == "  T"] <- 0
+  as.numeric(f)}) 
+# weather_daily_newark <- weather_daily_newark[complete.cases(weather_daily_newark),] #Toss NA's
+weather_daily_newark <- weather_daily_newark %>% group_by(Run_Date) %>% 
+  slice(1) #Take only the first entry when more than one entry exists per hour
+njt_featdaily <- njt_featdaily %>% inner_join(weather_daily_newark, by = "Run_Date" )
+```
+
+
 # Store to MySQL (MVP)  
 ```{r prep_data}
 sql_data <- njt_features %>% 
@@ -136,10 +170,24 @@ sql_data <- njt_features %>%
 ... will eventually migrate all of this to python and repeat future steps back here...
 
 ```{r data_to_sql}
-my_db <- src_mysql("njtfeatures", create = T)
-features_mysql <- copy_to(my_db, sql_data, temporary = FALSE, indexes = list("Scheduled_Start_Time", "Line"))
+# my_db <- src_mysql("njtfeatures", create = T)
+# features_mysql <- copy_to(my_db, sql_data, temporary = FALSE, indexes = list("Scheduled_Start_Time", "Line"))
 ```
 
+```{r}
+# write.csv(x = sql_data, file="~/Repos/NJT-DelayPredictor/data/njt_features.csv", row.names = FALSE)
+```
+
+```{r}
+#Downsamples data
+# tr_data <- tr_data[complete.cases(tr_data), ] #Removes only about 8K entries
+# 
+# set.seed(42)
+# #Using downsampling per "Line" to account for the Unbalanced training data
+# tr_ds <- tr_data %>% group_by(Line) %>% do(downSample(., .$is_delayed))
+# write.csv(tr_ds, file = "~/Repos/NJT-DelayPredictor/data/njt_features_downsampled.csv", row.names = FALSE)
+
+```
 
 # Additional Features to Consider  
 * Number of stops the train takes  
