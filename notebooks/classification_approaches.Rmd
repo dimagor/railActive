@@ -1,5 +1,5 @@
 ---
-title: "Classification Approaches"
+title: "Classification Approaches Comparison"
 author: "Dima"
 date: "September 14, 2015"
 output: html_document
@@ -24,32 +24,56 @@ opts_chunk$set(echo = TRUE,
 ```
 
 ```{r feature_cleanup}
-tr_ctrl <- trainControl(method="cv", number=5, savePred = TRUE, classProb = TRUE)
-
 tr_data <- njt_features %>% 
   # select(is_delayed, Line, dep_hour, dep_mon, dep_wday, prdelay, Temp_F, Visibility, WindSpeed, HourlyPrecip) %>%
   ungroup %>% 
   mutate(Line = gsub(" " , "_", Line),
-         is_delayed = factor(is_delayed, levels = c(TRUE,FALSE), labels = c("Yes","No")),
-         ttl_90 = ttl_line <= 90) %>% 
-  # Need to remove this field for the complete.cases function (not a feature I'll use anyway) 
+         is_delayed = factor(is_delayed, levels = c(TRUE,FALSE), labels = c("Yes","No"))) %>% 
+  # Need to remove these fields for the complete.cases function (not a feature I'll use anyway) 
   select(-Actual_End_Time, -delay_length, -ttl_dep_arv_line)
 tr_data <- tr_data[complete.cases(tr_data), ] #Removes only about 8K entries
 
 #Using downsampling per "Line" to account for the Unbalanced training data
 tr_ds <- tr_data %>% group_by(Line) %>% do(downSample(., .$is_delayed))
-
 ```
 
+# Preparing for Model Resampling
 ```{r}
-formula = Class ~ 
-  Line + 
-  as.factor(dep_hour) + 
-  as.character(dep_wday) + 
-  ttl_line +
-  Temp_F + 
-  Visibility + 
-  WindSpeed
+train_control <- trainControl(method = "repeatedcv",
+                           number = 5,
+                           repeats = 10,
+                           ## Estimate class probabilities
+                           classProbs = TRUE,
+                           ## Evaluate performance using 
+                           ## the following function
+                           summaryFunction = twoClassSummary)
+
+logit_fit <- train(Class ~ Line + as.factor(dep_hour) + as.character(dep_wday) + dep_mon + ttl_line +  Temp_F + Visibility + WindSpeed,
+                   data = training,
+                   method = "glm",
+                   family = "binomial",
+                   metric = "ROC",
+                   trControl = train_control)
+# pred <-  predict(logit_fit, training)
+# confusionMatrix(pred, training$Class)
+rf_fit <- train(Class ~ as.factor(dep_hour) + as.character(dep_wday) + dep_mon + ttl_line +  Temp_F + Visibility + WindSpeed,
+                data = training,
+                method = "rf",
+                ntree = 80,
+                metric = "ROC",
+                trControl = train_control)
+# tr_ctrl <- trainControl(method="cv", number=5, savePred = TRUE, classProb = TRUE)
+```
+
+
+
+
+
+
+
+
+
+```{r}
 testModel <- function(df, tr_ctrl, method = "glm", formula, ...){
   ds_df <- df %>% droplevels()
   fit <- train(formula, data = ds_df, method = method, trControl = tr_ctrl, ...)
@@ -70,9 +94,16 @@ testModel <- function(df, tr_ctrl, method = "glm", formula, ...){
 #Using all data
 results_dslogit_all <- testModel(tr_ds, tr_ctrl, method = "glm", family = "binomial", formula)
 
-results_dslogit_byline <- tr_ds %>% group_by(Line) %>% do(testModel(.,tr_ctrl, method = "glm", family = "binomial", formula))
+# results_dslogit_byline <- tr_ds %>% group_by(Line) %>% do(testModel(.,tr_ctrl, method = "glm", family = "binomial", formula))
 
 ```
+
+```{r}
+
+```
+
+
+
 
 # Random Forest
 
@@ -140,13 +171,14 @@ results_dslrf_byline <- tr_ds %>% group_by(Line) %>% do(testModel(.,tr_ctrl, met
 
 ```{r}
 modelfit_byline <- tr_ds %>% group_by(Line) %>% do(fit = train(Class ~ 
-  as.factor(dep_hour) + 
-  as.character(dep_wday) + 
-  ttl_line +
-  Temp_F + 
-  Visibility + 
-  WindSpeed,
-  data = ., method = "rf", trControl = tr_ctrl, ntree = 80))
+                                                                 as.factor(dep_hour) + 
+                                                                 as.character(dep_wday) +
+                                                                 dep_mon + 
+                                                                 ttl_line +
+                                                                 Temp_F + 
+                                                                 Visibility + 
+                                                                 WindSpeed,
+                                                               data = ., method = "rf", trControl = tr_ctrl, ntree = 80))
 save(modelfit_byline, file = "../../DelayPredictor/modelfit_byline.rda")
 ```
 
