@@ -1,1 +1,0 @@
-"Terminal","Scheduled_Start_Time","Line","STATUS","SEC_LATE","TRAIN_LINE","LINEABBREVIATION"

@@ -1,0 +1,160 @@
+---
+title: "Feature Engineering for Further Exploration"
+author: "Dmitriy Gorenshteyn"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, echo=FALSE, message=FALSE, warning=FALSE}
+library(dplyr)
+library(stringr)
+# library(njtPredict)
+library(lubridate) #Make sure the latest version is installed to avoid the round error
+devtools::load_all()
+data("njt_trains")
+opts_chunk$set(echo = TRUE,
+               message = FALSE,
+               prompt = FALSE,
+               warning = FALSE,
+               cache = FALSE,
+               eval = FALSE)
+
+```
+
+# Overview  
+
+### Source  
+This data was obtained directly from NJT and contains ~5 years of departure & arrival times for NJT trains.  
+
+
+# Binary Delay (10 Minutes or More)  
+```{r features_base}
+data("njt_trains")
+delay_thresh = 10
+
+njt_features <- njt_trains %>% 
+  filter(Line != "ACES_AC_EXPRE") %>% 
+  mutate(delay_length = as.numeric(difftime(Scheduled_End_Time,Actual_End_Time, units = "mins")),
+         #Ignore early arrivals
+         delay_length = ifelse(delay_length < 0, 0, delay_length), 
+         # NA's are likely cancellations, consider them as part of delays
+         is_delayed = delay_length >= delay_thresh | is.na(delay_length),
+         Line = gsub(" " , "_", Line)) %>% 
+  group_by(Line)
+```
+
+```{r features_datetime}
+njt_features <- njt_features %>% 
+  mutate(round_time = round_date(Scheduled_Start_Time, unit = "hour"), # Used as key to match to weather
+         dep_hour = hour(round_time),
+         dep_mon = month(round_time, label = TRUE),
+         dep_wday = wday(round_time, label = TRUE))
+```
+
+
+```{r feat_last_delay}
+getLastDelay <- function(df, group = "Line"){
+  #Set Max Time to prevent NA's and the very far delays  
+  max_delay <- 24 * 60 #24 Hours
+  #Great solution adapted from http://stackoverflow.com/questions/30391333/calculate-days-since-last-event-in-r
+  df <- df[order(df$Scheduled_Start_Time, decreasing = FALSE),]
+  last_event_index <- cumsum(df$is_delayed) + 1
+  
+  # shift it by one to the right
+  last_event_index <- c(1, last_event_index[1:length(last_event_index) - 1])
+  
+  # get the dates of the events and index the vector with the last_event_index, 
+  # added an NA as the first date because there was no event
+  last_event_date <- c(as.POSIXct(NA), df[which(df$is_delayed), "Scheduled_Start_Time"])[last_event_index]
+  
+  # substract the event's date with the date of the last event
+  
+  last_delay <- difftime(df$Scheduled_Start_Time, last_event_date, units = "mins")
+  last_delay_fixed <- pmin(last_delay, max_delay)
+  last_delay_fixed[is.na(last_delay_fixed)] <- max_delay
+  
+  df[,paste0("ttl_",group)] <- last_delay_fixed
+  df
+}
+njt_features <- njt_features %>% 
+  group_by(Line) %>% do(getLastDelay(. ,group = "line")) %>% #Delay length on line
+  group_by(Line, Scheduled_Departure_Terminal) %>% do(getLastDelay(., group = "dep_line")) %>% #Delay length considering departure station
+  group_by(Line, Scheduled_Departure_Terminal, Actual_Arrival_Terminal) %>% do(getLastDelay(., group = "dep_arv_line")) %>% 
+group_by(Line, Actual_Arrival_Terminal) %>% do(getLastDelay(., group = "arv_line"))#Delay length only arrival station 
+
+```
+
+```{r weather_hourly}
+data("weather_hourly")
+weather_hourly_newark <- filter(weather_hourly, WBAN == 14734) %>% 
+  mutate(round_time = round_date(Time,unit = "hour")) %>% 
+  select(round_time, Visibility, Temp_F = DryBulbFarenheit, Temp_C = DryBulbCelsius, WindSpeed, HourlyPrecip) %>% 
+  mutate(Visibility = as.numeric(Visibility),
+         Temp_F = as.numeric(Temp_F),
+         Temp_C = as.numeric(Temp_C),
+         WindSpeed = as.numeric(WindSpeed),
+         HourlyPrecip = as.numeric(HourlyPrecip)) %>% 
+  group_by(round_time) %>% 
+  slice(1) #Take only the first entry when more than one entry exists per hour
+weather_hourly_newark[,-1] <- apply(weather_daily_newark[,-1],2, function(f){
+  f[f == "M"] <- NA
+  f[f == "  T"] <- 0 #Trace can be considered at 0
+  f}) 
+njt_features <- inner_join(njt_features, weather_hourly_newark, by = "round_time")
+```
+
+```{r split_reasons}
+# Need to incorporate this to the previous step where the last delay reason is used (or possibly last reported reason)
+reason_types <- njt_features  %>% 
+  filter(Delay_Reason != "") %>%
+  count(Delay_Reason) %>%
+  select(Delay_Reason) %>% 
+  mutate(reason_entity = gsub("\\.","", word(Delay_Reason,1)),
+         reason_type = word(Delay_Reason,start = 2, end = -1))
+njt_features <- left_join(njt_features, reason_types, by = "Delay_Reason")
+
+# Fix NA for use in completecases later
+njt_features <- njt_features %>% 
+  mutate(reason_entity = ifelse(is.na(reason_entity),"",reason_entity),
+         reason_type = ifelse(is.na(reason_type),"",reason_type))
+
+```
+
+
+```{r save_base}
+devtools::use_data(njt_features, overwrite = TRUE)
+```
+
+
+# Daily Features  
+To predict number of delays (greater than 10 minutes) per day.  
+
+```{r daily_features}
+njt_featdaily <- njt_features %>% 
+  group_by(Run_Date, Line) %>% 
+  summarise(number_delays = sum(is_delayed)) %>% 
+  mutate(dep_mon = month(Run_Date, label = TRUE),
+         dep_wday = wday(Run_Date, label = TRUE))
+
+```
+
+```{r daily_weather}
+data("weather_daily")
+weather_daily_newark <- filter(weather_daily, WBAN == 14734)
+weather_daily_newark <- weather_daily_newark %>% 
+  select(Run_Date = YearMonthDay,
+         Tmax, Tmin, Tavg, PrecipTotal, SnowFall, WindSpeed = Max5Speed)
+weather_daily_newark[,-1] <- apply(weather_daily_newark[,-1],2, function(f){
+  f[f == "M"] <- NA
+  f[f == "  T"] <- 0
+  as.numeric(f)}) 
+# weather_daily_newark <- weather_daily_newark[complete.cases(weather_daily_newark),] #Toss NA's
+weather_daily_newark <- weather_daily_newark %>% group_by(Run_Date) %>% 
+  slice(1) #Take only the first entry when more than one entry exists per hour
+njt_featdaily <- njt_featdaily %>% inner_join(weather_daily_newark, by = "Run_Date" )
+```
+
+
+# Additional Features to Consider  
+* Number of stops the train takes  
+* May be more general grouping updating the lines as necessary
