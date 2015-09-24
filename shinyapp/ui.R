@@ -9,29 +9,58 @@ library(shiny)
 library(shinydashboard)
 library(DT)
 
-shinyUI(navbarPage("Delay Predictor",
-                   # tabPanel(title = "Home"),
-                   tabPanel(title = "Dashboard",
-                            fluidRow(style = "background-color: #F8F8F8; border-radius: 5px; border: 2px solid #707070; margin: 2px; padding: 2px; ",
-                              column(8, "",
-                                     # h2("Current Conditions"),
-                                     uiOutput(outputId = "last_update"),
-                                     uiOutput(outputId = "currentcond")),
-                              column(4, "",
-                                selectInput("interval", label = "Refresh interval",
-                                            choices = c(
-                                              "30 seconds" = 30,
-                                              "1 minute" = 50,
-                                              "5 minutes" = 600,
-                                              "Off" = 0),
-                                            selected = "30"),
-                                actionButton("refresh", "Refresh now")
-                            )),
-                            fluidRow(
-                              column(6,
-                              DT::dataTableOutput(outputId = "predictions")
-                              )
-                            )
-                            ),
-                   tabPanel(title = "About")
-))
+header <- dashboardHeader(title = "Rail Dashboard",
+                          dropdownMenuOutput(outputId = "train_status"))
+
+body <- dashboardBody(
+  fluidRow(
+    column(width = 4, box(collapsible = FALSE, width = NULL, title = "Control Panel",
+                          uiOutput(outputId = "line_list"),
+                          selectInput("interval", label = "Refresh interval",
+                                      choices = c(
+                                        "30 seconds" = 30,
+                                        "1 minute" = 50,
+                                        "5 minutes" = 600,
+                                        "Off" = 0),
+                                      selected = "30"),
+                          actionButton("refresh", "Refresh now"),
+                          uiOutput(outputId = "last_update")
+    )),
+    column(width = 3, box(collapsible = FALSE, width = NULL,
+                          # uiOutput(outputId = "currentcond")
+                          valueBoxOutput("current_delaychance", width = 12)
+                          )
+    ),
+    column(width = 5, box(collapsible = FALSE, width = NULL, h1("x")))
+  )
+)
+
+dashboardPage(header,  dashboardSidebar(disable = TRUE),  body, skin = "black")
+
+
+# shinyUI(navbarPage("Delay Predictor",
+#                    # tabPanel(title = "Home"),
+#                    tabPanel(title = "Dashboard",
+#                             fluidRow(style = "background-color: #F8F8F8; border-radius: 5px; border: 2px solid #707070; margin: 2px; padding: 2px; ",
+#                               column(8, "",
+#                                      # h2("Current Conditions"),
+#                                      uiOutput(outputId = "last_update"),
+#                                      uiOutput(outputId = "currentcond")),
+#                               column(4, "",
+#                                 selectInput("interval", label = "Refresh interval",
+#                                             choices = c(
+#                                               "30 seconds" = 30,
+#                                               "1 minute" = 50,
+#                                               "5 minutes" = 600,
+#                                               "Off" = 0),
+#                                             selected = "30"),
+#                                 actionButton("refresh", "Refresh now")
+#                             )),
+#                             fluidRow(
+#                               column(6,
+#                               DT::dataTableOutput(outputId = "predictions")
+#                               )
+#                             )
+#                             ),
+#                    tabPanel(title = "About")
+# ))

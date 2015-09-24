@@ -108,12 +108,24 @@ results_dslogit_all <- testModel(tr_ds, tr_ctrl, method = "glm", family = "binom
 # Random Forest
 
 ```{r}
-rf_fit <- train(formula, data = tr_ds, method = "rf", trControl = tr_ctrl, ntree = 80)
-rf_pred <-  predict(rf_fit, tr_ds)
-cm <- confusionMatrix(rf_pred, tr_ds$Class)
-plot(varImp(rf_fit))
+library(doMC)
+registerDoMC(cores = 5)
+rf_fit <- train(Class ~ Line +
+                  as.factor(dep_hour) + 
+                  as.character(dep_wday) + 
+                  as.character(dep_mon) +
+                  ttl_line +
+                  Temp_F + 
+                  Visibility + 
+                  WindSpeed, data = tr_ds, method = "rf", 
+                trControl = trainControl(method="cv", number=5), ntree = 80)
+
+
+# rf_pred <-  predict(rf_fit, tr_ds)
+# cm <- confusionMatrix(rf_pred, tr_ds$Class)
+# plot(varImp(rf_fit))
 rf_fit -> modelfit
-save(modelfit, file = "../../DelayPredictor/modelfit.rda")
+save(modelfit, file = "shinyapp/modelfit.rda")
 ```
 
 ## Separate Holdout
