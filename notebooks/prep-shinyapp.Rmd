@@ -63,12 +63,34 @@ predict_prob <- inner_join(pred_df, modelfit_byline, by = "Line")  %>%
       do(data.frame(p=predict(.$fit, ., type = "prob")[[1]][[1]][1]))
 ```
 
+# 12 Hour Forecast  
+```{r}
+w_get_hourly <- GET("http://api.wunderground.com/api/547710b840da62b4/hourly/q/NJ/Newark.json")
+w_text_hourly <- content(w_get_hourly, as = "text") %>% fromJSON()
+
+hourly_forecast <- w_text_hourly$hourly_forecast %>% flatten %>% 
+  transmute(WindSpeed = wspd.english,
+            Temp_F = temp.english,
+    Date_Time = paste(FCTTIME.hour_padded, 
+                             FCTTIME.min, 
+                             FCTTIME.mon_padded, 
+                             FCTTIME.mday_padded, 
+                             FCTTIME.year)) %>%
+  mutate(Date_Time = as.POSIXct(strptime(Date_Time, format = "%H %M %m %d %Y")),
+         Visibility = pred_df$Visibility[1],
+         dep_hour = hour(Date_Time),
+         dep_mon = month(Date_Time, label = TRUE),
+         dep_wday = wday(Date_Time, label = TRUE)) %>% 
+  slice(1:12)
+```
 
 
 # Conditional Probability Tables  
 ```{r}
 data("njt_features")
-njt_features <- njt_features %>% mutate(is_delayed = factor(is_delayed, levels = c(TRUE,FALSE), labels = c("Yes","No")))
+njt_features <- njt_features %>% ungroup %>% 
+  mutate(is_delayed = factor(is_delayed, levels = c(TRUE,FALSE), labels = c("Yes","No")),
+                                        Line = gsub(" ","_",Line))
 ```
 
 
@@ -90,21 +112,21 @@ cpt_wday <- njt_features %>%
   spread(is_delayed, n) %>%
   mutate(Line, dep_wday, pct = Yes/(No+Yes)*100) %>% 
   inner_join(cpt_base, by = "Line") %>% 
-  transmute(Line, feature = "dep_wday", feature_val = dep_wday, p_fold = log(pct/base_pct))
+  transmute(Line, feature = "dep_wday", feature_val = dep_wday, p_fold = log2(pct/base_pct))
 
 cpt_mon <- njt_features %>% 
   count(Line, is_delayed, dep_mon) %>% 
   spread(is_delayed, n) %>%
   mutate(Line, dep_mon, pct = Yes/(No+Yes)*100) %>% 
   inner_join(cpt_base, by = "Line") %>% 
-  transmute(Line, feature = "dep_mon", feature_val = dep_mon, p_fold = log(pct/base_pct))
+  transmute(Line, feature = "dep_mon", feature_val = dep_mon, p_fold = log2(pct/base_pct))
 
 cpt_hour <- njt_features %>% 
   count(Line, is_delayed, dep_hour) %>% 
   spread(is_delayed, n) %>%
   mutate(Line, dep_hour, pct = Yes/(No+Yes)*100) %>% 
   inner_join(cpt_base, by = "Line") %>% 
-  transmute(Line, feature = "dep_hour", feature_val = as.factor(dep_hour), p_fold = log(pct/base_pct))
+  transmute(Line, feature = "dep_hour", feature_val = as.factor(dep_hour), p_fold = log2(pct/base_pct))
 ```
 
 
@@ -116,7 +138,7 @@ cpt_WindSpeed <- njt_features %>% group_by(Line) %>%
   spread(is_delayed, n) %>%
   mutate(Line, bin, pct = Yes/(No+Yes)*100) %>% 
   inner_join(cpt_base, by = "Line") %>% 
-  transmute(Line, feature = "WindSpeed", feature_val = as.factor(bin), p_fold = log(pct/base_pct))
+  transmute(Line, feature = "WindSpeed_break", feature_val = as.factor(bin), p_fold = log2(pct/base_pct))
 
 breaks_Temp_F = c(min(njt_features$Temp_F),seq(33,126,20), max(njt_features$Temp_F))
 cpt_Temp_F <- njt_features %>% group_by(Line) %>%
@@ -125,7 +147,7 @@ cpt_Temp_F <- njt_features %>% group_by(Line) %>%
   spread(is_delayed, n) %>%
   mutate(Line, bin, pct = Yes/(No+Yes)*100) %>% 
   inner_join(cpt_base, by = "Line") %>% 
-  transmute(Line, feature = "Temp_F", feature_val = as.factor(bin), p_fold = log(pct/base_pct))
+  transmute(Line, feature = "Temp_F_break", feature_val = as.factor(bin), p_fold = log2(pct/base_pct))
 
 
 breaks_Visibility = c(seq(1,45,10),max(njt_features$Visibility))
@@ -135,7 +157,7 @@ cpt_Visibility <- njt_features %>% group_by(Line) %>%
   spread(is_delayed, n) %>%
   mutate(Line, bin, pct = Yes/(No+Yes)*100) %>% 
   inner_join(cpt_base, by = "Line") %>% 
-  transmute(Line, feature = "Visibility", feature_val = as.factor(bin), p_fold = log(pct/base_pct))
+  transmute(Line, feature = "Visibility_break", feature_val = as.factor(bin), p_fold = log2(pct/base_pct))
 ```
 
 ```{r}
@@ -146,24 +168,25 @@ cpt_ttl_line <- njt_features %>% group_by(Line) %>%
   spread(is_delayed, n) %>%
   mutate(Line, bin, pct = Yes/(No+Yes)*100) %>% 
   inner_join(cpt_base, by = "Line") %>% 
-  transmute(Line, feature = "ttl_line", feature_val = as.factor(bin), p_fold = log(pct/base_pct))
+  transmute(Line, feature = "ttl_line_break", feature_val = as.factor(bin), p_fold = log2(pct/base_pct))
 ```
 
 
 
 ```{r}
 cpt_complete <- do.call(rbind,list(cpt_wday, cpt_mon, cpt_hour, cpt_Visibility, cpt_Temp_F, cpt_WindSpeed, cpt_ttl_line))
+save(cpt_complete, breaks_WindSpeed, breaks_ttl_line, breaks_Visibility, breaks_Temp_F,  file="shinyapp/cpt_complete.rda")
 ```
 
 
 ```{r}
 pred_cpt <- pred_df %>% mutate(
-  ttl_line = cut(ttl_line, breaks_ttl_line , include.lowest = TRUE),
-  Temp_F = cut(Temp_F, breaks_Temp_F , include.lowest = TRUE),
-  WindSpeed = cut(WindSpeed, breaks_WindSpeed , include.lowest = TRUE),
-  Visibility = cut(Visibility, breaks_Visibility , include.lowest = TRUE)
+  ttl_line_break = cut(ttl_line, breaks_ttl_line , include.lowest = TRUE),
+  Temp_F_break = cut(Temp_F, breaks_Temp_F , include.lowest = TRUE),
+  WindSpeed_break = cut(WindSpeed, breaks_WindSpeed , include.lowest = TRUE),
+  Visibility_break = cut(Visibility, breaks_Visibility , include.lowest = TRUE)
 ) %>% 
-  select(Line, dep_hour:WindSpeed) %>% gather(feature, feature_val, -Line) %>% 
+  select(Line, dep_hour:Visibility_break) %>% gather(feature, feature_val, -Line, -ttl_line:-WindSpeed) %>% 
   inner_join(cpt_complete) %>% 
   mutate(feature = factor(feature, 
                           levels = c("ttl_line",
@@ -184,6 +207,6 @@ pred_cpt <- pred_df %>% mutate(
 ```
 
 ```{r}
-pred_cpt  %>% ggplot(aes(feature,p_fold, fill = p_fold)) + geom_bar(stat = "identity") + facet_wrap(~Line, ncol = 4) + coord_flip() + theme_minimal() + scale_fill_gradient2(low = "blue", mid = "black", high = "red", midpoint = 0) + ylim(-1,1)
+pred_cpt  %>% ggplot(aes(feature,p_fold, fill = p_fold)) + geom_bar(stat = "identity") + facet_wrap(~Line, ncol = 3) + coord_flip() + theme_minimal() + scale_fill_gradient2(low = "blue", mid = "black", high = "red", midpoint = 0) + ylim(-1,1)
 ```
 
