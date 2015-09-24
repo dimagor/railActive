@@ -110,6 +110,17 @@ knn_fit <- train(line_formula,
                 preProc = c("center", "scale"))
 save(knn_fit, file =  "data/knn_fit.rda")
 
+nb_fit <- train(line_formula,
+                data = training,
+                tuneLength = 10,
+                trControl = train_control,
+                metric = "ROC", 
+                method = "nb",
+                preProc = c("center", "scale"))
+save(nb_fit, file = "data/nb_fit.rda")
+
+
+
 # 
 # smvlin_fit <- train(line_formula,
 #                 data = training,
@@ -124,12 +135,15 @@ save(knn_fit, file =  "data/knn_fit.rda")
 ```
 
 ```{r}
-resamps <- resamples(list("Loistic Regression" = logit_fit, "GLMNet" = glmnet_fit, "Random Forest" = rf_fit, "KNN" = knn_fit))
+resamps <- resamples(list(
+  "Logistic Regression" = logit_fit, 
+  "GLMNet" = glmnet_fit, 
+  "Random Forest" = rf_fit, 
+  "KNN" = knn_fit,
+  "GBM" = gbm_fit))
+  # "Naive Bayes" = nb_fit))
 diff(resamps)  %>% summary
-<<<<<<< HEAD
-bwplot(resamp, layout = c(3, 1))
-=======
->>>>>>> 8938e8e1af6a20d8975bf8196581701653f8fe21
+bwplot(resamps, layout = c(3, 1))
 ```
 
 # Testing the Model
