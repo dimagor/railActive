@@ -126,7 +126,10 @@ save(knn_fit, file =  "data/knn_fit.rda")
 ```{r}
 resamps <- resamples(list("Loistic Regression" = logit_fit, "GLMNet" = glmnet_fit, "Random Forest" = rf_fit, "KNN" = knn_fit))
 diff(resamps)  %>% summary
+<<<<<<< HEAD
 bwplot(resamp, layout = c(3, 1))
+=======
+>>>>>>> 8938e8e1af6a20d8975bf8196581701653f8fe21
 ```
 
 # Testing the Model
