@@ -7,7 +7,7 @@ output: html_document
 
 ```{r setup, echo=FALSE, message=FALSE, warning=FALSE}
 library(dplyr)
-library(njtPredict)
+# library(njtPredict)
 library(lubridate)
 library(ggplot2)
 library(tidyr)
@@ -34,78 +34,109 @@ tr_data <- njt_features %>%
 tr_data <- tr_data[complete.cases(tr_data), ] #Removes only about 8K entries
 
 #Using downsampling per "Line" to account for the Unbalanced training data
-tr_ds <- tr_data %>% group_by(Line) %>% do(downSample(., .$is_delayed))
+data_downsampled <- tr_data %>% group_by(Line) %>% do(downSample(., .$is_delayed))
 ```
 
-# Preparing for Model Resampling
+# Model Selection
 ```{r}
+library(doMC)
+registerDoMC(cores = 7)
 train_control <- trainControl(method = "repeatedcv",
-                           number = 5,
-                           repeats = 10,
-                           ## Estimate class probabilities
-                           classProbs = TRUE,
-                           ## Evaluate performance using 
-                           ## the following function
-                           summaryFunction = twoClassSummary)
+                              number = 5,
+                              repeats = 10,
+                              ## Estimate class probabilities
+                              classProbs = TRUE,
+                              ## Evaluate performance using 
+                              ## the following function
+                              summaryFunction = twoClassSummary)
+line_formula <- Class ~ Line +
+  as.factor(dep_hour) + 
+  as.character(dep_wday) +
+  as.character(dep_mon) + 
+  ttl_line +
+  Temp_F + 
+  Visibility + 
+  WindSpeed
 
-logit_fit <- train(Class ~ Line + as.factor(dep_hour) + as.character(dep_wday) + dep_mon + ttl_line +  Temp_F + Visibility + WindSpeed,
+# Withold 20% of the data for an independent evaluation
+in_train <- createDataPartition(data_downsampled$Class, p=.80, list=FALSE)
+training <- data_downsampled[in_train, ]
+testing <- data_downsampled[-in_train, ]
+save(in_train, training, testing, train_control, file = "data/training_data.rda")
+```
+
+```{r model_train, eval = FALSE}
+logit_fit <- train(line_formula,
                    data = training,
+                   tuneLength = 10,
+                   trControl = train_control,
                    method = "glm",
                    family = "binomial",
-                   metric = "ROC",
-                   trControl = train_control)
-# pred <-  predict(logit_fit, training)
-# confusionMatrix(pred, training$Class)
-rf_fit <- train(Class ~ as.factor(dep_hour) + as.character(dep_wday) + dep_mon + ttl_line +  Temp_F + Visibility + WindSpeed,
+                   metric = "ROC")
+save(logit_fit, "data/logit_fit.rda")
+
+glmnet_fit <- train(line_formula,
+                   data = training,
+                   tuneLength = 10,
+                   trControl = train_control,
+                   method = "glmnet",
+                   family = "binomial",
+                   metric = "ROC")
+save(glmnet_fit, file = "data/glmnet_fit.rda")
+
+rf_fit <- train(line_formula,
                 data = training,
+                tuneLength = 10,
+                trControl = train_control,
+                metric = "ROC", 
                 method = "rf",
-                ntree = 80,
-                metric = "ROC",
-                trControl = train_control)
-# tr_ctrl <- trainControl(method="cv", number=5, savePred = TRUE, classProb = TRUE)
-```
+                ntree = 80)
+save(rf_fit, file = "data/rf_fit.rda")
 
+gbm_fit <- train(line_formula,
+                data = training,
+                tuneLength = 10,
+                trControl = train_control,
+                metric = "ROC", 
+                method = "gbm")
+save(gbm_fit, file = "data/gbm_fit.rda")
 
+knn_fit <- train(line_formula,
+                data = training,
+                tuneLength = 10,
+                trControl = train_control,
+                metric = "ROC", 
+                method = "knn",
+                preProc = c("center", "scale"))
+save(knn_fit, file =  "data/knn_fit.rda")
 
+# 
+# smvlin_fit <- train(line_formula,
+#                 data = training,
+#                 tuneLength = 5,
+#                 trControl = train_control,
+#                 metric = "ROC", 
+#                 method = "svmLinear",
+#                 preProc = c("center", "scale"))
+# save(svmlin_fit, file = "data/svmlin_fit.rda")
 
-
-
-
-
-
-```{r}
-testModel <- function(df, tr_ctrl, method = "glm", formula, ...){
-  ds_df <- df %>% droplevels()
-  fit <- train(formula, data = ds_df, method = method, trControl = tr_ctrl, ...)
-  pred <-  predict(fit, ds_df)
-  cm <- confusionMatrix(pred, ds_df$Class)
-  
-  # Get AUC per Fold
-  roc_eval <- fit$pred %>% 
-    group_by(Resample) %>% 
-    arrange(desc(Yes)) %>% 
-    mutate(obs = ifelse(obs == "Yes",1,0)) %>%
-    summarise(auc = auc(roc(obs,Yes)))
-  roc_vec <- as.vector(roc_eval$auc)
-  names(roc_vec) <- roc_eval$Resample
-  data.frame(t(c(cm$overall, cm$byClass, roc_vec)))
-}
-
-#Using all data
-results_dslogit_all <- testModel(tr_ds, tr_ctrl, method = "glm", family = "binomial", formula)
-
-# results_dslogit_byline <- tr_ds %>% group_by(Line) %>% do(testModel(.,tr_ctrl, method = "glm", family = "binomial", formula))
 
 ```
 
 ```{r}
-
+resamps <- resamples(list("Loistic Regression" = logit_fit, "GLMNet" = glmnet_fit, "Random Forest" = rf_fit, "KNN" = knn_fit))
+diff(resamps)  %>% summary
+bwplot(resamp, layout = c(3, 1))
 ```
 
+# Testing the Model
+```{r}
+model_predictions <- predict(rf_fit, testing)
+confusionMatrix(model_predictions, testing$Class)
+```
 
-
-
-# Random Forest
+# Needs Updating
+## Random Forest
 
 ```{r}
 rf_fit <- train(formula, data = tr_ds, method = "rf", trControl = tr_ctrl, ntree = 80)
@@ -116,58 +147,6 @@ rf_fit -> modelfit
 save(modelfit, file = "../../DelayPredictor/modelfit.rda")
 ```
 
-## Separate Holdout
-```{r}
-in_train <- createDataPartition(tr_ds$Class, p=.75, list=FALSE)
-rf_fit_ho <- train(formula, data = tr_ds, method = "rf", trControl = tr_ctrl, ntree = 80, subset = in_train)
-# rf_pred_ho <-  predict(rf_fit_ho, tr_ds[-in_train,])
-test = tr_ds[-in_train,]
-test$pred = predict(rf_fit_ho, tr_ds[-in_train,], "raw")
-confusionMatrix(test$pred, test$Class)
-
-
-testModelHoldout <- function(df, tr_ctrl, method = "glm", formula, ...){
-  ds_df <- df %>% droplevels()
-  in_partition <- createDataPartition(ds_df$Class, p=.75, list=FALSE)
-  fit <- train(formula, data = ds_df, method = method, trControl = tr_ctrl, subset = in_partition, ...)
-  
-  test_set <- ds_df[-in_partition,]
-  test_set$pred <-  predict(fit, ds_df[-in_partition,])
-  test_set$pred_prob <-  predict(fit, ds_df[-in_partition,], type = "prob")$Yes
-  cm <- confusionMatrix(test_set$pred, test_set$Class)
-  
-  # Get AUC per Fold
-  roc_eval <- test_set %>% 
-    arrange(desc(pred_prob)) %>% 
-    mutate(Class = ifelse(Class == "Yes",1,0)) %>%
-    summarise(auc = auc(roc(Class,pred_prob)))
-  # roc_vec <- as.vector(roc_eval$auc)
-  # names(roc_vec) <- roc_eval$Resample
-  data.frame(t(c(cm$overall, cm$byClass)),"AUC" = roc_eval$auc)
-}
-formula_byline <- Class ~ 
-  as.factor(dep_hour) + 
-  as.character(dep_wday) + 
-  ttl_line +
-  Temp_F + 
-  Visibility + 
-  WindSpeed
-results_ho_byline <- tr_ds %>% group_by(Line) %>% do(testModelHoldout(.,tr_ctrl, method = "rf", formula_byline, ntree = 80))
-```
-
-
-```{r}
-roc_eval <- rf_fit$pred %>% 
-  group_by(Resample) %>% 
-  arrange(desc(Yes)) %>% 
-  mutate(obs = ifelse(obs == "Yes",1,0))
-roc_eval %>% summarise(auc = auc(roc(obs,Yes)))
-```
-
-```{r}
-results_dsrf_all <- testModel(tr_ds, tr_ctrl, method = "rf", formula, ntree=80)
-results_dslrf_byline <- tr_ds %>% group_by(Line) %>% do(testModel(.,tr_ctrl, method = "rf", formula, ntree = 80))
-```
 
 ```{r}
 modelfit_byline <- tr_ds %>% group_by(Line) %>% do(fit = train(Class ~ 
@@ -184,44 +163,38 @@ save(modelfit_byline, file = "../../DelayPredictor/modelfit_byline.rda")
 
 
 
+
+## Separate Holdout
 ```{r}
-cmp_summ <- rbind(results_dslogit_all %>% mutate(Line="ALL", method = "Logistic Regression"),
-results_dsrf_all %>% mutate(Line = "ALL", method = "Random Forrest"),
-results_dslogit_byline %>% mutate(method = "Logistic Regression"),
-results_dslrf_byline %>% mutate(method = "Random Forrest"))
+library(pROC)
+tr_ctrl = trainControl(method = "cv",
+                              number = 5,
+                       savePredictions = TRUE,
+                       classProb = TRUE)
 
-cmp_summ <- cmp_summ %>% gather("Fold","auc",Fold1:Fold5)
-
+testModelHoldout <- function(df, tr_ctrl, method = "glm", formula, ...){
+  ds_df <- df %>% droplevels()
+  in_partition <- createDataPartition(ds_df$Class, p=.75, list=FALSE)
+  fit <- train(formula, data = ds_df, method = method, trControl = tr_ctrl, subset = in_partition, ...)
+  
+  test_set <- ds_df[-in_partition,]
+  test_set$pred <-  predict(fit, ds_df[-in_partition,])
+  test_set$pred_prob <-  predict(fit, ds_df[-in_partition,], type = "prob")$Yes
+  cm <- confusionMatrix(test_set$pred, test_set$Class)
+  
+  # Get AUC per Fold
+  roc_eval <- test_set %>% 
+    arrange(desc(pred_prob)) %>% 
+    mutate(Class = ifelse(Class == "Yes",1,0)) %>%
+    summarise(auc = auc(roc(Class,pred_prob)))
+  data.frame(t(c(cm$overall, cm$byClass)),"AUC" = roc_eval$auc)
+}
+formula_byline <- Class ~ 
+  as.factor(dep_hour) + 
+  as.character(dep_wday) + 
+  ttl_line +
+  Temp_F + 
+  Visibility + 
+  WindSpeed
+results_ho_byline <- data_downsampled %>% group_by(Line) %>% do(testModelHoldout(.,tr_ctrl, method = "rf", formula_byline, ntree = 80))
 ```
-
-```{r}
-cmp_summ <- cmp_summ %>% 
-  mutate(breakdown = ifelse(Line == "ALL","All_Line","By_Line")) %>% 
-  mutate(Line = relevel(factor(Line), ref = "ALL")) %>% 
-  filter(Line == "ALL")
-ggplot(cmp_summ, aes(breakdown, auc, fill = method)) + geom_boxplot() + theme_bw()
-
-library(gridExtra)
-
-p1 <- ggplot(cmp_summ, aes(method, Accuracy, fill = method)) + geom_bar(stat="identity", position = 'dodge') + theme_bw() + ggtitle("Accuracy")+ guides(fill=FALSE) + xlab("") + scale_fill_hue(l=40)
-
-p2 <- ggplot(cmp_summ, aes(method, Sensitivity, fill = method)) + geom_bar(stat="identity", position = 'dodge') + theme_bw() + ggtitle("Sensitivity")+ guides(fill=FALSE)+ xlab("")+ scale_fill_hue(l=40)
-
-# ggplot(cmp_summ, aes(Line, Specificity, fill = method)) + geom_bar(stat="identity", position = 'dodge') + theme_bw() + ggtitle("Specificity")
-p3 <- cmp_summ %>% group_by(Line, method) %>% summarise(meanauc = mean(auc)) %>% ggplot(aes(method,meanauc, fill = method)) + geom_bar(stat = 'identity', position = 'dodge') + theme_bw() +ggtitle("meanAUC")+ guides(fill=FALSE)+ xlab("")+ scale_fill_hue(l=40)
-
-grid.arrange(p1,p2,p3, ncol=3)
-
-
-```
-
-#Downsamples  /Reweighting
-
-```{r}
-njt_featdaily <- njt_featdaily  %>% mutate(is_delayed = as.factor(number_delays>0))
-daily_formula <- is_delayed ~ Line + as.character(dep_mon) + as.character(dep_wday) + Tmin + Tavg + PrecipTotal + SnowFall + WindSpeed
-fit <- train(daily_formula, data = njt_featdaily, method = "glm", family = "binomial", tr_ctrl = trainControl(method="cv", number=2, savePred = TRUE, classProb = TRUE))
-pred <-  predict(fit, njt_featdaily)
-cm <- confusionMatrix(pred, njt_featdaily$number_delays)
-```
-
