@@ -15,6 +15,11 @@ header <- dashboardHeader(title = "Rail Dashboard",
 
 body <- dashboardBody(
   fluidRow(
+    column(width = 12,
+           box(collapsible = TRUE, title = "Welcome/About", width = NULL, collapsed = TRUE,
+               p("Bacon ipsum dolor amet pork chop filet mignon proident, picanha eu culpa ea dolor. Tempor beef ribs salami, meatloaf irure rump capicola alcatra corned beef eiusmod. Jowl hamburger salami sirloin, laborum ball tip sint veniam. Consectetur ut meatloaf, adipisicing bacon reprehenderit ball tip short loin leberkas et in. Turducken proident aliqua flank dolor occaecat non corned beef capicola porchetta irure andouille consectetur rump brisket. In rump cupidatat consectetur pork belly dolore exercitation ground round nisi brisket sunt.")))
+  ),
+  fluidRow(
     column(width = 4, box(collapsible = FALSE, width = NULL, title = "Control Panel", height = "350px",
                           uiOutput(outputId = "line_list"),
                           br(),

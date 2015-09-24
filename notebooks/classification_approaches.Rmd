@@ -24,6 +24,7 @@ opts_chunk$set(echo = TRUE,
 ```
 
 ```{r feature_cleanup}
+set.seed(42)
 tr_data <- njt_features %>% 
   # select(is_delayed, Line, dep_hour, dep_mon, dep_wday, prdelay, Temp_F, Visibility, WindSpeed, HourlyPrecip) %>%
   ungroup %>% 
@@ -178,15 +179,20 @@ save(modelfit, file = "shinyapp/modelfit.rda")
 
 
 ```{r}
-modelfit_byline <- tr_ds %>% group_by(Line) %>% do(fit = train(Class ~ 
-                                                                 as.factor(dep_hour) + 
+modelfit_byline <- data_downsampled %>% group_by(Line) %>% do(fit = train(Class ~ 
+                                                                 as.character(dep_hour) + 
                                                                  as.character(dep_wday) +
-                                                                 dep_mon + 
+                                                                 as.character(dep_mon) + 
                                                                  ttl_line +
                                                                  Temp_F + 
                                                                  Visibility + 
                                                                  WindSpeed,
-                                                               data = ., method = "rf", trControl = tr_ctrl, ntree = 80))
+                                                               data = ., method = "rf", 
+                                                               trControl = trainControl(method = "cv",
+                                                                                        number = 5,
+                                                                                        savePredictions = TRUE,
+                                                                                        classProb = TRUE),
+                                                               ntree = 80))
 save(modelfit_byline, file = "../../DelayPredictor/modelfit_byline.rda")
 ```
 

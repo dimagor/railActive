@@ -11,7 +11,7 @@ library(tidyr)
 
 shinyServer(function(input, output, session) {
   main_info <- read.csv("main_info.csv")
-  load(file = "modelfit_byline.rda")
+  load(file = "modelfit.rda")
   load(file = "cpt_complete.rda")
 
   getCurrentWeather <- reactive({
@@ -99,10 +99,10 @@ shinyServer(function(input, output, session) {
   predictCurrentProbabilities <- reactive({
     pred_df <- buildCurrentPredictionDF()
     if(!is.null(pred_df)){
-    inner_join(pred_df, modelfit_byline, by = "Line")  %>%
+      pred_df %>%
       mutate(Line_Name = Full.Name) %>%
       group_by(Line_Name, Line, dep_hour)  %>%
-      do(data.frame(p=predict(.$fit, ., type = "prob")[[1]][[1]][1])) %>%
+      do(data.frame(p=predict(modelfit, ., type = "prob")[[1]][[1]][1])) %>%
       ungroup %>%
         mutate(pct = as.integer(round(p*100)),
              txt = ifelse(pct<50, "low",ifelse(pct<75,"medium", "high")))
@@ -112,10 +112,10 @@ shinyServer(function(input, output, session) {
   predictHourlyProbabilities <- reactive({
     pred_df <- buildHourlyPredictionDF()
     if(!is.null(pred_df)){
-      inner_join(pred_df, modelfit_byline, by = "Line")  %>%
+      pred_df %>%
         mutate(Line_Name = Full.Name) %>%
         group_by(Line_Name, Line, dep_hour,  Date_Time)  %>%
-        do(data.frame(p=predict(.$fit, ., type = "prob")[[1]][[1]][1])) %>%
+        do(data.frame(p=predict(modelfit, ., type = "prob")[[1]][[1]][1])) %>%
         ungroup %>%
         mutate(pct = as.integer(round(p*100)))
     }else{NULL}
@@ -132,8 +132,7 @@ shinyServer(function(input, output, session) {
         Visibility_break = cut(Visibility, breaks_Visibility , include.lowest = TRUE)
       ) %>%
         select(Line, dep_hour:Visibility_break) %>% gather(feature, feature_val, -Line, -ttl_line:-WindSpeed) %>%
-        inner_join(cpt_complete) %>%
-        mutate(impact = ifelse(p_fold < -1, "Lowers Chance", ifelse(p_fold > 1, "Increaes Chance", "Neutral")))
+        inner_join(cpt_complete)
     }else{NULL}
   })
 
@@ -240,10 +239,9 @@ shinyServer(function(input, output, session) {
       }else {">24 hours"}
       tags$table(style = "width = 100%",
                  tags$tr(tags$td(tags$b("Last Delay:"), last_delay)),
-                 tags$tr(tags$td(tags$b("Temp:"), paste0(vals$Temp_F,"°F"))),
+                 tags$tr(tags$td(tags$b("Temp:"), vals$Temp_F,"°F")),
                  tags$tr(tags$td(tags$b("WindSpeed:"), paste0(vals$WindSpeed,"mph"))),
                  tags$tr(tags$td(tags$b("Visibility:"), paste0(vals$Visibility,"miles")))
-
       )
     }
     else {NULL}
@@ -268,7 +266,10 @@ shinyServer(function(input, output, session) {
                                                                          "Day of\nthe Week",
                                                                          "Current\nMonth"))
       ))
-      cpt_line %>% ggplot(aes(feature,p_fold, fill = p_fold)) +
+
+      cpt_line %>%
+        mutate(p_fold = ifelse(p_fold>2,2, ifelse(p_fold < -2, -2, p_fold))) %>%
+        ggplot(aes(feature,p_fold, fill = p_fold)) +
         geom_bar(stat = "identity") +
         scale_fill_gradient2(low = "blue", mid = "black", high = "red", midpoint = 0, limits=c(-2, 2), guide = FALSE) +
         scale_y_continuous(limits = c(-2,2),
@@ -290,7 +291,7 @@ shinyServer(function(input, output, session) {
         scale_y_continuous(limits = c(0,100),
                            breaks = c(25, 67, 87),
                            labels = c("Low", "Medium", "High")) +
-        scale_fill_gradient2(low = "chartreuse4", mid = "yellow", high = "red4", midpoint = 75, limits=c(0, 100), guide = FALSE) +
+        scale_fill_gradient2(low = "chartreuse4", mid = "yellow", high = "red3", midpoint = 50, limits=c(0, 100), guide = FALSE) +
         xlab("") + ylab("") +
         theme_minimal() +
         theme(axis.text=element_text(size=12))
