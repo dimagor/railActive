@@ -10,12 +10,14 @@ library(shinydashboard)
 library(DT)
 
 header <- dashboardHeader(title = "Rail Dashboard",
+                          dropdownMenuOutput(outputId = "notifications"),
                           dropdownMenuOutput(outputId = "train_status"))
 
 body <- dashboardBody(
   fluidRow(
-    column(width = 4, box(collapsible = FALSE, width = NULL, title = "Control Panel",
+    column(width = 4, box(collapsible = FALSE, width = NULL, title = "Control Panel", height = "350px",
                           uiOutput(outputId = "line_list"),
+                          br(),
                           selectInput("interval", label = "Refresh interval",
                                       choices = c(
                                         "30 seconds" = 30,
@@ -26,41 +28,19 @@ body <- dashboardBody(
                           actionButton("refresh", "Refresh now"),
                           uiOutput(outputId = "last_update")
     )),
-    column(width = 3, box(collapsible = FALSE, width = NULL,
-                          # uiOutput(outputId = "currentcond")
-                          valueBoxOutput("current_delaychance", width = 12)
+    column(width = 3, box(collapsible = FALSE, width = NULL, title = "Live Status", height = "350px",
+                          valueBoxOutput("current_delaychance", width = 12),
+                          uiOutput(outputId = "currentcond")
                           )
     ),
-    column(width = 5, box(collapsible = FALSE, width = NULL, h1("x")))
+    column(width = 5, box(collapsible = FALSE, width = NULL, title = "Explanation of Effect", height = "350px",
+                          plotOutput(outputId = "featureplot", height = "280px", width = "100%")))
+  ),
+  fluidRow(
+    column(width = 12,
+    box(collapsible = FALSE, width = NULL, title = "12-Hour Forecast", height = "450px",
+        plotOutput(outputId = "hourlyforecastplot", height = "380px", width = "100%")))
   )
 )
 
 dashboardPage(header,  dashboardSidebar(disable = TRUE),  body, skin = "black")
-
-
-# shinyUI(navbarPage("Delay Predictor",
-#                    # tabPanel(title = "Home"),
-#                    tabPanel(title = "Dashboard",
-#                             fluidRow(style = "background-color: #F8F8F8; border-radius: 5px; border: 2px solid #707070; margin: 2px; padding: 2px; ",
-#                               column(8, "",
-#                                      # h2("Current Conditions"),
-#                                      uiOutput(outputId = "last_update"),
-#                                      uiOutput(outputId = "currentcond")),
-#                               column(4, "",
-#                                 selectInput("interval", label = "Refresh interval",
-#                                             choices = c(
-#                                               "30 seconds" = 30,
-#                                               "1 minute" = 50,
-#                                               "5 minutes" = 600,
-#                                               "Off" = 0),
-#                                             selected = "30"),
-#                                 actionButton("refresh", "Refresh now")
-#                             )),
-#                             fluidRow(
-#                               column(6,
-#                               DT::dataTableOutput(outputId = "predictions")
-#                               )
-#                             )
-#                             ),
-#                    tabPanel(title = "About")
-# ))

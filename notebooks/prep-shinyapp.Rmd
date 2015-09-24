@@ -63,6 +63,26 @@ predict_prob <- inner_join(pred_df, modelfit_byline, by = "Line")  %>%
       do(data.frame(p=predict(.$fit, ., type = "prob")[[1]][[1]][1]))
 ```
 
+# 12 Hour Forecast  
+```{r}
+w_get_hourly <- GET("http://api.wunderground.com/api/547710b840da62b4/hourly/q/NJ/Newark.json")
+w_text_hourly <- content(w_get_hourly, as = "text") %>% fromJSON()
+
+hourly_forecast <- w_text_hourly$hourly_forecast %>% flatten %>% 
+  transmute(WindSpeed = wspd.english,
+            Temp_F = temp.english,
+    Date_Time = paste(FCTTIME.hour_padded, 
+                             FCTTIME.min, 
+                             FCTTIME.mon_padded, 
+                             FCTTIME.mday_padded, 
+                             FCTTIME.year)) %>%
+  mutate(Date_Time = as.POSIXct(strptime(Date_Time, format = "%H %M %m %d %Y")),
+         Visibility = pred_df$Visibility[1],
+         dep_hour = hour(Date_Time),
+         dep_mon = month(Date_Time, label = TRUE),
+         dep_wday = wday(Date_Time, label = TRUE)) %>% 
+  slice(1:12)
+```
 
 
 # Conditional Probability Tables  
