@@ -136,22 +136,42 @@ save(nb_fit, file = "data/nb_fit.rda")
 ```
 
 ```{r}
+data(list = list("glmnet_fit","rf_fit","knn_fit","gbm_fit"))
 resamps <- resamples(list(
   "Logistic Regression" = logit_fit, 
-  "GLMNet" = glmnet_fit, 
+  "Regularized Regression" = glmnet_fit, 
   "Random Forest" = rf_fit, 
-  "KNN" = knn_fit,
-  "GBM" = gbm_fit))
+  "K-Nearest Neighbors" = knn_fit))
   # "Naive Bayes" = nb_fit))
 diff(resamps)  %>% summary
 bwplot(resamps, layout = c(3, 1))
 ```
 
+```{r}
+resamps_df <- resamps$values %>% gather(method_metric, value, -Resample) %>% separate(method_metric, c("method","metric"),sep = "~")
+resamps_df %>% ggplot(aes(method, value)) + geom_boxplot() + facet_wrap(~metric, scale = "free_y") + theme_bw()
+```
+
+
 # Testing the Model
 ```{r}
-model_predictions <- predict(rf_fit, testing)
+model_predictions <- predict(rf_fit, testing, type = "prob" )
 confusionMatrix(model_predictions, testing$Class)
 ```
+
+```{r}
+library(pROC)
+roc_test <- testing
+roc_test$pred_prob <- model_predictions$Yes  
+roc_test <- roc_test %>% 
+    arrange(desc(pred_prob)) %>% 
+    mutate(Class = ifelse(Class == "Yes",1,0))
+
+roc_obj <-  roc(roc_test$Class,roc_test$pred_prob)
+roc_df <- data.frame(Sensitivity = roc_obj$sensitivities, Specificity = roc_obj$specificities)
+roc_df %>% ggplot(aes(1-Specificity, Sensitivity)) + geom_line(color = "red2", cex = 1) + geom_abline(intercept = 0, slope = 1, color = "black", linetype = 2) + theme_classic() + scale_x_continuous(expand = c(0, 0)) + scale_y_continuous(expand = c(0, 0))
+```
+
 
 # Needs Updating
 ## Random Forest
