@@ -51,7 +51,7 @@ train_control <- trainControl(method = "repeatedcv",
                               ## the following function
                               summaryFunction = twoClassSummary)
 line_formula <- Class ~ Line +
-  as.factor(dep_hour) + 
+  as.character(dep_hour) + 
   as.character(dep_wday) +
   as.character(dep_mon) + 
   ttl_line +
@@ -135,6 +135,36 @@ save(nb_fit, file = "data/nb_fit.rda")
 
 ```
 
+
+```{r}
+trim <- function(object, ...) UseMethod("trim")
+trim.train <- function(object, ...) {
+  removals <- c("results", "pred", "bestTune", "call", "dots",
+                "metric", "trainingData", "resample", "resampledCM",
+                "perfNames", "maxmimize", "times")
+  for(i in removals)
+    if(i %in% names(object)) object[i] <- NULL
+  c_removals <- c('method', 'number', 'repeats', 'p', 'initialWindow', 
+                  'horizon', 'fixedWindow', 'verboseIter', 'returnData', 
+                  'returnResamp', 'savePredictions', 'summaryFunction', 
+                  'selectionFunction', 'index', 'indexOut', 'timingSamps', 
+                  'trim', 'yLimits')
+  for(i in c_removals)
+    if(i %in% names(object$control)) object$control[i] <- NULL  
+  if(!is.null(object$modelInfo$trim))
+    object$finalModel <- object$modelInfo$trim(object$finalModel)
+  object
+}
+modelfit <- train(line_formula, method = "rf", data =  training, 
+                  trControl = trainControl(method = "none", classProbs = FALSE),
+                  tuneGrid = data.frame(mtry = 14), ntree = 80, trim = TRUE)
+modelfit <- trim(modelfit)
+
+mf_predict <- predict(modelfit, testing)
+confusionMatrix(mf_predict, testing$Class)
+```
+
+
 ```{r}
 data(list = list("glmnet_fit","rf_fit","knn_fit","gbm_fit"))
 resamps <- resamples(list(
@@ -180,14 +210,14 @@ roc_df %>% ggplot(aes(1-Specificity, Sensitivity)) + geom_line(color = "red2", c
 library(doMC)
 registerDoMC(cores = 5)
 rf_fit <- train(Class ~ Line +
-                  as.factor(dep_hour) + 
+                  as.character(dep_hour) + 
                   as.character(dep_wday) + 
                   as.character(dep_mon) +
                   ttl_line +
                   Temp_F + 
                   Visibility + 
-                  WindSpeed, data = tr_ds, method = "rf", 
-                trControl = trainControl(method="cv", number=5), ntree = 80)
+                  WindSpeed, data = training, method = "rf", 
+                trControl = trainControl(), ntree = 80, mtry = 14)
 
 
 # rf_pred <-  predict(rf_fit, tr_ds)
