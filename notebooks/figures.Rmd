@@ -1,0 +1,122 @@
+---
+title: "Figures"
+author: "Dmitriy Gorenshteyn"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, echo=FALSE, message=FALSE, warning=FALSE}
+library(dplyr)
+library(knitr)
+opts_chunk$set(echo = TRUE,
+               message = FALSE,
+               prompt = FALSE,
+               warning = FALSE,
+               cache = TRUE)
+```
+
+
+# Variable Importance Plot
+```{r}
+library(caret)
+data("rf_fit")
+variableimprtance <- varImp(rf_fit)$importance %>% fix_data_frame()
+variableimprtance  %>% 
+  arrange(-Overall)  %>% 
+  slice(1:10)  %>% 
+  # Fix: Manually specify levels to make sure labels are always correct
+  mutate(term = factor(term, levels = term,
+                       labels = c("Time Since Last Delay", "Temperature", 
+                                  "Wind Speed", "1AM", "Visibility", 
+                                  "NE Corridor Line", "4AM", "Coast Line", 
+                                  "Departure: Tuesday", "Departure: Wednesday"))
+         )  %>%
+  ggplot(aes(term, Overall)) + 
+  geom_bar(stat = 'identity') + 
+  theme_classic() + 
+  coord_flip() + 
+  xlab("") + 
+  ylab("Variable Importance %")
+
+```
+
+# Testing ROC plot
+```{r}
+library(pROC)
+data("training_data")
+model_predictions <- predict(rf_fit, testing,type = "prob" )
+roc_test <- testing
+roc_test$pred_prob <- model_predictions$Yes
+roc_obj <-  roc(roc_test$Class,roc_test$pred_prob, plot = FALSE)
+
+# Obtain values from object to plot using ggplot
+roc_df <- data.frame(Sensitivity = roc_obj$sensitivities, Specificity = roc_obj$specificities)
+
+roc_df %>% 
+  ggplot(aes(1-Specificity, Sensitivity)) + 
+  geom_line(color = "red2", cex = 1) + 
+  geom_abline(intercept = 0, slope = 1, color = "black", linetype = 2) + 
+  theme_classic() + 
+  scale_x_continuous(expand = c(0, 0)) + #Fix the 0 offset
+  scale_y_continuous(expand = c(0, 0))
+```
+
+```{r}
+data("njt_features")
+njt_features <- njt_features %>% mutate(is_delayed = factor(is_delayed, levels = c(TRUE,FALSE), labels = c("Yes","No")))
+feat_ex <- njt_features %>% filter(Line == "CORRIDOR")
+# bywday <- feat_ex %>% 
+#   count(Line, dep_wday, is_delayed) %>% 
+#   spread(is_delayed,n) %>% 
+#   transmute(pct_delays = Yes/(No+Yes)*100,
+#          feat = dep_wday,
+#          type = "Day of Week")
+byhour <- feat_ex %>% 
+  count(dep_hour, is_delayed) %>% 
+  spread(is_delayed,n) %>% 
+  transmute(pct_delays = Yes/(No+Yes)*100,
+         feat = as.character(dep_hour),
+         type = "Hour of Day")
+
+
+timetolast <- feat_ex %>% group_by(Line) %>%
+  mutate(bin = cut(ttl_line, 
+                   breaks = c(seq(0,120,30), max(feat_ex$ttl_line)),
+                   include.lowest = TRUE,
+                   labels = c("<30", "30-60", "60-90", "90-120", ">120")) ) %>% 
+  count(bin, is_delayed) %>% 
+  spread(is_delayed,n) %>% 
+  transmute(pct_delays = Yes/(No+Yes)*100,
+         feat = bin,
+         type = "Time Since\nLast Delay")
+
+bytemp <- feat_ex %>% group_by(Line) %>%
+  mutate(bin = cut(Temp_F, 
+                   breaks = c(0, 32,60, 80, 100, 150),
+                   include.lowest = TRUE,
+                   labels = c("<32", "32-60", "60-80", "80-100", ">100"))) %>% 
+  count(bin, is_delayed) %>% 
+  spread(is_delayed,n) %>% 
+  transmute(pct_delays = Yes/(No+Yes)*100,
+         feat = bin,
+         type = "Temperature")
+
+# 
+# bywind <- feat_ex %>% group_by(Line) %>%
+#   mutate(bin = cut(WindSpeed, 
+#                    breaks = c(0,15,30,60),
+#                    include.lowest = TRUE)) %>% 
+#                    # labels = c("<15mph", "15-30", "30-45",">45mph"))) %>% 
+#   count(bin, is_delayed) %>% 
+#   spread(is_delayed,n) %>% 
+#   transmute(pct_delays = Yes/(No+Yes)*100,
+#          feat = bin,
+#          type = "Temperature")
+
+baseline <- feat_ex %>% count(is_delayed, Line) %>% spread(is_delayed, n) %>% mutate(pct_delays = Yes/ (No + Yes) * 100) %>% .$pct_delays
+
+rbind(timetolast, byhour, bytemp, bywday) %>% ggplot(aes(feat, pct_delays)) + geom_bar(stat = "identity") + facet_wrap(~type, scale = "free") + geom_hline(yintercept=baseline, color = "red", size = 1, linetype = 2) + theme_minimal() + xlab("") + ylab("% of Trains Delayed")
+
+
+```
+

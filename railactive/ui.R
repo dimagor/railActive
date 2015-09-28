@@ -55,7 +55,7 @@ body <- dashboardBody(
   ),
   fluidRow(
     column(width = 12,
-    box(collapsible = FALSE, width = NULL, title = "12-Hour Forecast", height = "450px",
+    box(collapsible = TRUE, collapsed = TRUE, width = NULL, title = "12-Hour Forecast",
         plotOutput(outputId = "hourlyforecastplot", height = "380px", width = "100%")))
   )
 )

@@ -42,7 +42,7 @@ shinyServer(function(input, output, session) {
     ttld_file <- getTTLD()
 
     # Process Date/Time
-    pred_df <- main_info %>% mutate(Current_Datetime = Sys.time(), #make sure system time is correct on server
+    pred_df <- main_info %>% mutate(Current_Datetime = format(Sys.time(), tz = "America/New_York"), #make sure system time is correct on server
                                     dep_hour = hour(Current_Datetime),
                                     dep_mon = month(Current_Datetime, label = TRUE),
                                     dep_wday = wday(Current_Datetime, label = TRUE))
@@ -215,7 +215,7 @@ shinyServer(function(input, output, session) {
     p(class = "muted",
       tags$b("Predictions as of:"),
       br(),
-      format(Sys.time(), "%A %B %e, %I:%M%p")
+      format(Sys.time(), "%A %B %e, %I:%M%p", tz = "America/New_York")
     )
   })
 
