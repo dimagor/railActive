@@ -41,7 +41,8 @@ njt_coltypes <- list("character",
                     "character",
                     "factor",
                     "factor")
-# Obtained from "Record-Layout-ALL-TRAINS.doc"
+
+# Fixed width info obtained from "Record-Layout-ALL-TRAINS.doc"
 njt_widths = c(8, 6, 4, 4, 4, 4, 4, 30, 13)
 njt_2010 <- read.fwf("../data/njt_data/TRAIN_EXTRACT_2010.TXT", widths = njt_widths, colClasses = njt_coltypes, col.names = njt_colnames)
 njt_2011 <- read.fwf("../data/njt_data/TRAIN_EXTRACT_2011.TXT", widths = njt_widths, colClasses = njt_coltypes, col.names = njt_colnames)

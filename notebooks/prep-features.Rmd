@@ -9,7 +9,7 @@ output: html_document
 library(dplyr)
 library(stringr)
 # library(njtPredict)
-library(lubridate) #Make sure the latest version is installed to avoid the round error
+library(lubridate) #Make sure the latest version is installed to avoid error in rounding dates
 devtools::load_all()
 data("njt_trains")
 opts_chunk$set(echo = TRUE,
@@ -44,6 +44,7 @@ njt_features <- njt_trains %>%
 ```
 
 ```{r features_datetime}
+#Add features based on date/time
 njt_features <- njt_features %>% 
   mutate(round_time = round_date(Scheduled_Start_Time, unit = "hour"), # Used as key to match to weather
          dep_hour = hour(round_time),
@@ -76,6 +77,7 @@ getLastDelay <- function(df, group = "Line"){
   df[,paste0("ttl_",group)] <- last_delay_fixed
   df
 }
+
 njt_features <- njt_features %>% 
   group_by(Line) %>% do(getLastDelay(. ,group = "line")) %>% #Delay length on line
   group_by(Line, Scheduled_Departure_Terminal) %>% do(getLastDelay(., group = "dep_line")) %>% #Delay length considering departure station
@@ -96,6 +98,8 @@ weather_hourly_newark <- filter(weather_hourly, WBAN == 14734) %>%
          HourlyPrecip = as.numeric(HourlyPrecip)) %>% 
   group_by(round_time) %>% 
   slice(1) #Take only the first entry when more than one entry exists per hour
+
+# Clean up weather data
 weather_hourly_newark[,-1] <- apply(weather_daily_newark[,-1],2, function(f){
   f[f == "M"] <- NA
   f[f == "  T"] <- 0 #Trace can be considered at 0
@@ -104,7 +108,7 @@ njt_features <- inner_join(njt_features, weather_hourly_newark, by = "round_time
 ```
 
 ```{r split_reasons}
-# Need to incorporate this to the previous step where the last delay reason is used (or possibly last reported reason)
+# Clean up reasons
 reason_types <- njt_features  %>% 
   filter(Delay_Reason != "") %>%
   count(Delay_Reason) %>%

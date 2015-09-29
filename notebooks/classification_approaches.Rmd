@@ -26,22 +26,25 @@ opts_chunk$set(echo = TRUE,
 ```{r feature_cleanup}
 set.seed(42)
 tr_data <- njt_features %>% 
-  # select(is_delayed, Line, dep_hour, dep_mon, dep_wday, prdelay, Temp_F, Visibility, WindSpeed, HourlyPrecip) %>%
   ungroup %>% 
   mutate(Line = gsub(" " , "_", Line),
          is_delayed = factor(is_delayed, levels = c(TRUE,FALSE), labels = c("Yes","No"))) %>% 
-  # Need to remove these fields for the complete.cases function (not a feature I'll use anyway) 
+  # Need to remove these fields for the complete.cases function (these aren't used as features) 
   select(-Actual_End_Time, -delay_length, -ttl_dep_arv_line)
+
 tr_data <- tr_data[complete.cases(tr_data), ] #Removes only about 8K entries
 
-#Using downsampling per "Line" to account for the Unbalanced training data
+# Using downsampling per "Line" to account for the Unbalanced training data
 data_downsampled <- tr_data %>% group_by(Line) %>% do(downSample(., .$is_delayed))
 ```
 
 # Model Selection
-```{r}
+```{r model_setup}
+# Register the # of cores to use
 library(doMC)
 registerDoMC(cores = 7)
+
+# Specify a fixed control object for accurate comparison between samples
 train_control <- trainControl(method = "repeatedcv",
                               number = 5,
                               repeats = 10,
@@ -50,6 +53,7 @@ train_control <- trainControl(method = "repeatedcv",
                               ## Evaluate performance using 
                               ## the following function
                               summaryFunction = twoClassSummary)
+
 line_formula <- Class ~ Line +
   as.character(dep_hour) + 
   as.character(dep_wday) +
@@ -63,28 +67,33 @@ line_formula <- Class ~ Line +
 in_train <- createDataPartition(data_downsampled$Class, p=.80, list=FALSE)
 training <- data_downsampled[in_train, ]
 testing <- data_downsampled[-in_train, ]
+
+
 save(in_train, training, testing, train_control, file = "data/training_data.rda")
 ```
 
 ```{r model_train, eval = FALSE}
+# Logistic Regression
 logit_fit <- train(line_formula,
                    data = training,
-                   tuneLength = 10,
+                   tuneLength = 10, #Not necessary
                    trControl = train_control,
                    method = "glm",
                    family = "binomial",
                    metric = "ROC")
-save(logit_fit, "data/logit_fit.rda")
+save(logit_fit, file = "data/logit_fit.rda")
 
+# Regularized Logistic Regression
 glmnet_fit <- train(line_formula,
-                   data = training,
-                   tuneLength = 10,
-                   trControl = train_control,
-                   method = "glmnet",
-                   family = "binomial",
-                   metric = "ROC")
+                    data = training,
+                    tuneLength = 10,
+                    trControl = train_control,
+                    method = "glmnet",
+                    family = "binomial",
+                    metric = "ROC")
 save(glmnet_fit, file = "data/glmnet_fit.rda")
 
+# Random Forest
 rf_fit <- train(line_formula,
                 data = training,
                 tuneLength = 10,
@@ -94,23 +103,26 @@ rf_fit <- train(line_formula,
                 ntree = 80)
 save(rf_fit, file = "data/rf_fit.rda")
 
+# Gradient Boosted Model
 gbm_fit <- train(line_formula,
-                data = training,
-                tuneLength = 10,
-                trControl = train_control,
-                metric = "ROC", 
-                method = "gbm")
+                 data = training,
+                 tuneLength = 10,
+                 trControl = train_control,
+                 metric = "ROC", 
+                 method = "gbm")
 save(gbm_fit, file = "data/gbm_fit.rda")
 
+# K-nearest neighbors
 knn_fit <- train(line_formula,
-                data = training,
-                tuneLength = 10,
-                trControl = train_control,
-                metric = "ROC", 
-                method = "knn",
-                preProc = c("center", "scale"))
+                 data = training,
+                 tuneLength = 10,
+                 trControl = train_control,
+                 metric = "ROC", 
+                 method = "knn",
+                 preProc = c("center", "scale"))
 save(knn_fit, file =  "data/knn_fit.rda")
 
+# Naive Bayes
 nb_fit <- train(line_formula,
                 data = training,
                 tuneLength = 10,
@@ -121,8 +133,8 @@ nb_fit <- train(line_formula,
 save(nb_fit, file = "data/nb_fit.rda")
 
 
-
-# 
+## SVM
+# Too slow, not run
 # smvlin_fit <- train(line_formula,
 #                 data = training,
 #                 tuneLength = 5,
@@ -135,8 +147,65 @@ save(nb_fit, file = "data/nb_fit.rda")
 
 ```
 
+# Model Comparison
+```{r compare_models}
+data(list = list("glmnet_fit","rf_fit","knn_fit","gbm_fit"))
+resamps <- resamples(list(
+  "Logistic Regression" = logit_fit, 
+  "Regularized Regression" = glmnet_fit, 
+  "Random Forest" = rf_fit, 
+  "K-Nearest Neighbors" = knn_fit))
+# "Naive Bayes" = nb_fit))
+diff(resamps)  %>% summary
+bwplot(resamps, layout = c(3, 1))
+```
 
-```{r}
+```{r resamps_df}
+#Convert resamples values to dataframe for use in gplot
+resamps_df <- resamps$values %>% 
+  gather(method_metric, value, -Resample) %>% 
+  separate(method_metric, c("method","metric"),sep = "~")
+
+resamps_df %>% 
+  ggplot(aes(method, value)) + 
+  geom_boxplot() + 
+  facet_wrap(~metric, scale = "free_y") + 
+  theme_bw()
+```
+
+
+# Testing the Model
+```{r eval_confusionmatrix}
+model_predictions <- predict(rf_fit, testing, type = "prob" )
+confusionMatrix(model_predictions, testing$Class)
+```
+
+```{r eval_roc}
+library(pROC)
+roc_test <- testing
+roc_test$pred_prob <- model_predictions$Yes  
+roc_test <- roc_test %>% 
+  arrange(desc(pred_prob)) %>% 
+  mutate(Class = ifelse(Class == "Yes",1,0))
+
+roc_obj <-  roc(roc_test$Class,roc_test$pred_prob)
+roc_df <- data.frame(Sensitivity = roc_obj$sensitivities, Specificity = roc_obj$specificities)
+roc_df %>% 
+  ggplot(aes(1-Specificity, Sensitivity)) + 
+  geom_line(color = "red2", cex = 1) + 
+  geom_abline(intercept = 0, slope = 1, color = "black", linetype = 2) + 
+  theme_classic() + scale_x_continuous(expand = c(0, 0)) + 
+  scale_y_continuous(expand = c(0, 0))
+```
+
+
+# Save the Model 
+
+```{r cleanup_save}
+# Caret version seems to be missing the trim method for train, manually entering it to decrease the size of the 
+# model on disk (for the dashboard)
+# https://github.com/topepo/caret/blob/master/pkg/caret/R/trim.R
+
 trim <- function(object, ...) UseMethod("trim")
 trim.train <- function(object, ...) {
   removals <- c("results", "pred", "bestTune", "call", "dots",
@@ -144,17 +213,18 @@ trim.train <- function(object, ...) {
                 "perfNames", "maxmimize", "times")
   for(i in removals)
     if(i %in% names(object)) object[i] <- NULL
-  c_removals <- c('method', 'number', 'repeats', 'p', 'initialWindow', 
-                  'horizon', 'fixedWindow', 'verboseIter', 'returnData', 
-                  'returnResamp', 'savePredictions', 'summaryFunction', 
-                  'selectionFunction', 'index', 'indexOut', 'timingSamps', 
-                  'trim', 'yLimits')
-  for(i in c_removals)
-    if(i %in% names(object$control)) object$control[i] <- NULL  
-  if(!is.null(object$modelInfo$trim))
-    object$finalModel <- object$modelInfo$trim(object$finalModel)
-  object
+    c_removals <- c('method', 'number', 'repeats', 'p', 'initialWindow', 
+                    'horizon', 'fixedWindow', 'verboseIter', 'returnData', 
+                    'returnResamp', 'savePredictions', 'summaryFunction', 
+                    'selectionFunction', 'index', 'indexOut', 'timingSamps', 
+                    'trim', 'yLimits')
+    for(i in c_removals)
+      if(i %in% names(object$control)) object$control[i] <- NULL  
+    if(!is.null(object$modelInfo$trim))
+      object$finalModel <- object$modelInfo$trim(object$finalModel)
+    object
 }
+
 modelfit <- train(line_formula, method = "rf", data =  training, 
                   trControl = trainControl(method = "none", classProbs = FALSE),
                   tuneGrid = data.frame(mtry = 14), ntree = 80, trim = TRUE)
@@ -165,95 +235,36 @@ confusionMatrix(mf_predict, testing$Class)
 ```
 
 
+
+
+# Classifier per line
 ```{r}
-data(list = list("glmnet_fit","rf_fit","knn_fit","gbm_fit"))
-resamps <- resamples(list(
-  "Logistic Regression" = logit_fit, 
-  "Regularized Regression" = glmnet_fit, 
-  "Random Forest" = rf_fit, 
-  "K-Nearest Neighbors" = knn_fit))
-  # "Naive Bayes" = nb_fit))
-diff(resamps)  %>% summary
-bwplot(resamps, layout = c(3, 1))
-```
-
-```{r}
-resamps_df <- resamps$values %>% gather(method_metric, value, -Resample) %>% separate(method_metric, c("method","metric"),sep = "~")
-resamps_df %>% ggplot(aes(method, value)) + geom_boxplot() + facet_wrap(~metric, scale = "free_y") + theme_bw()
-```
-
-
-# Testing the Model
-```{r}
-model_predictions <- predict(rf_fit, testing, type = "prob" )
-confusionMatrix(model_predictions, testing$Class)
-```
-
-```{r}
-library(pROC)
-roc_test <- testing
-roc_test$pred_prob <- model_predictions$Yes  
-roc_test <- roc_test %>% 
-    arrange(desc(pred_prob)) %>% 
-    mutate(Class = ifelse(Class == "Yes",1,0))
-
-roc_obj <-  roc(roc_test$Class,roc_test$pred_prob)
-roc_df <- data.frame(Sensitivity = roc_obj$sensitivities, Specificity = roc_obj$specificities)
-roc_df %>% ggplot(aes(1-Specificity, Sensitivity)) + geom_line(color = "red2", cex = 1) + geom_abline(intercept = 0, slope = 1, color = "black", linetype = 2) + theme_classic() + scale_x_continuous(expand = c(0, 0)) + scale_y_continuous(expand = c(0, 0))
-```
-
-
-# Needs Updating
-## Random Forest
-
-```{r}
-library(doMC)
-registerDoMC(cores = 5)
-rf_fit <- train(Class ~ Line +
-                  as.character(dep_hour) + 
-                  as.character(dep_wday) + 
-                  as.character(dep_mon) +
-                  ttl_line +
-                  Temp_F + 
-                  Visibility + 
-                  WindSpeed, data = training, method = "rf", 
-                trControl = trainControl(), ntree = 80, mtry = 14)
-
-
-# rf_pred <-  predict(rf_fit, tr_ds)
-# cm <- confusionMatrix(rf_pred, tr_ds$Class)
-# plot(varImp(rf_fit))
-rf_fit -> modelfit
-save(modelfit, file = "shinyapp/modelfit.rda")
-```
-
-
-```{r}
-modelfit_byline <- data_downsampled %>% group_by(Line) %>% do(fit = train(Class ~ 
-                                                                 as.character(dep_hour) + 
-                                                                 as.character(dep_wday) +
-                                                                 as.character(dep_mon) + 
-                                                                 ttl_line +
-                                                                 Temp_F + 
-                                                                 Visibility + 
-                                                                 WindSpeed,
-                                                               data = ., method = "rf", 
-                                                               trControl = trainControl(method = "cv",
-                                                                                        number = 5,
-                                                                                        savePredictions = TRUE,
-                                                                                        classProb = TRUE),
-                                                               ntree = 80))
+modelfit_byline <- data_downsampled %>% group_by(Line) %>%
+  do(fit = train(Class ~ 
+                   as.character(dep_hour) + 
+                   as.character(dep_wday) +
+                   as.character(dep_mon) + 
+                   ttl_line +
+                   Temp_F + 
+                   Visibility + 
+                   WindSpeed,
+                 data = ., method = "rf", 
+                 trControl = trainControl(method = "cv",
+                                          number = 5,
+                                          savePredictions = TRUE,
+                                          classProb = TRUE),
+                 ntree = 80))
 save(modelfit_byline, file = "../../DelayPredictor/modelfit_byline.rda")
 ```
 
 
 
 
-## Separate Holdout
+## Separate Holdout (TODO: Update Tuning)
 ```{r}
 library(pROC)
 tr_ctrl = trainControl(method = "cv",
-                              number = 5,
+                       number = 5,
                        savePredictions = TRUE,
                        classProb = TRUE)
 
@@ -274,9 +285,11 @@ testModelHoldout <- function(df, tr_ctrl, method = "glm", formula, ...){
     summarise(auc = auc(roc(Class,pred_prob)))
   data.frame(t(c(cm$overall, cm$byClass)),"AUC" = roc_eval$auc)
 }
+
 formula_byline <- Class ~ 
-  as.factor(dep_hour) + 
+  as.character(dep_hour) + 
   as.character(dep_wday) + 
+  as.character(dep_mon) +
   ttl_line +
   Temp_F + 
   Visibility + 
