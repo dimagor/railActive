@@ -254,22 +254,22 @@ shinyServer(function(input, output, session) {
     current_cpt <- buildCurrentCPT()
     if(!is.null(current_cpt) & !is.null(input$trainline)){
       cpt_line <- current_cpt[current_cpt$Line == input$trainline, ]
-      cpt_line <- cpt_line %>% mutate(feature = factor(feature,
-                                                              levels = rev(c("ttl_line_break",
-                                                                         "Temp_F_break",
-                                                                         "WindSpeed_break",
-                                                                         "Visibility_break",
-                                                                         "dep_hour",
-                                                                         "dep_wday",
-                                                                         "dep_mon")),
-                                                              labels = rev(c("Time To\nLast Delay",
-                                                                         "Current\nTemperature",
-                                                                         "Current\nWind Speed",
-                                                                         "Current\nVisibility",
-                                                                         "Time of Day",
-                                                                         "Day of\nthe Week",
-                                                                         "Current\nMonth"))
-      ))
+      cpt_line <- cpt_line %>%
+        mutate(feature = factor(feature,
+                                levels = rev(c("ttl_line_break",
+                                               "Temp_F_break",
+                                               "WindSpeed_break",
+                                               "Visibility_break",
+                                               "dep_hour",
+                                               "dep_wday",
+                                               "dep_mon")),
+                                labels = rev(c("Time To\nLast Delay",
+                                               "Current\nTemperature",
+                                               "Current\nWind Speed",
+                                               "Current\nVisibility",
+                                               "Time of Day",
+                                               "Day of\nthe Week",
+                                               "Current\nMonth"))))
 
       cpt_line %>%
         mutate(p_fold = ifelse(p_fold>2,2, ifelse(p_fold < -2, -2, p_fold))) %>%
@@ -282,7 +282,7 @@ shinyServer(function(input, output, session) {
         xlab("") + ylab("") +
         coord_flip() +
         theme_minimal() +
-        theme(axis.text=element_text(size=12))
+        theme(axis.text=element_text(size=16))
     }
     else{NULL}
   })
@@ -298,7 +298,7 @@ shinyServer(function(input, output, session) {
         scale_fill_gradient2(low = "chartreuse4", mid = "yellow", high = "red3", midpoint = 50, limits=c(0, 100), guide = FALSE) +
         xlab("") + ylab("") +
         theme_minimal() +
-        theme(axis.text=element_text(size=12))
+        theme(axis.text=element_text(size=18))
     }
     else {NULL}
   })
