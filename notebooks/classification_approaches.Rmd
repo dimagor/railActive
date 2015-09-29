@@ -1,7 +1,7 @@
 ---
-title: "Classification Approaches Comparison"
-author: "Dima"
-date: "September 14, 2015"
+title: "Comparison of Classification Approaches"
+author: "Dmitriy Gorenshteyn"
+date: "`r Sys.Date()`"
 output: html_document
 ---
 
@@ -229,6 +229,8 @@ modelfit <- train(line_formula, method = "rf", data =  training,
                   trControl = trainControl(method = "none", classProbs = FALSE),
                   tuneGrid = data.frame(mtry = 14), ntree = 80, trim = TRUE)
 modelfit <- trim(modelfit)
+
+saveRDS(modelfit, file = "railactive/data/modelfit.rds")
 
 mf_predict <- predict(modelfit, testing)
 confusionMatrix(mf_predict, testing$Class)

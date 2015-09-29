@@ -132,20 +132,11 @@ njt_features %>%
   plotPrDelayFacet
 ```
 
-## Using Weather Data  
-```{r}
+## Using Weather Data   
+TODO
 
-```
+## Comparing Delay Reasons  
+Need to propogate Reasons (MVP++)  
 
-
-## Comparing Reasons
-Need to propogate Reasons (MVP++)
-## NJT vs Amtrak
-
-## Types of Delays
 
 # Analyzing Daily Trends  
-```{r}
-
-```
-

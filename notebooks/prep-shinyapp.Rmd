@@ -1,5 +1,5 @@
 ---
-title: "webapp_parts"
+title: "Preparing/Testing Parts Necessary for the Shiny Application"
 author: "Dima"
 date: "September 21, 2015"
 output: html_document
@@ -15,7 +15,7 @@ knitr::opts_chunk$set(echo = TRUE)
 #Map lines to ttld & Name
 data("njt_features")
 line_info <- data.frame(Line = unique(njt_features$Line))
-line_ttld <- read.table("shinyapp/line_model_map.txt", header = TRUE)
+line_ttld <- read.table("external_data/line_model_map.txt", header = TRUE)
 main_info <- inner_join(line_info, line_ttld, by = "Line") %>% mutate(Line = gsub(" ","_",Line))
 
 write.csv(main_info, file = "../shinyapp/main_info.csv", row.names = FALSE)

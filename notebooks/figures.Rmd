@@ -1,5 +1,5 @@
 ---
-title: "Figures"
+title: "Figures for Presentationsz"
 author: "Dmitriy Gorenshteyn"
 date: "`r Sys.Date()`"
 output: html_document
@@ -17,20 +17,20 @@ opts_chunk$set(echo = TRUE,
 
 
 # Variable Importance Plot
-```{r}
+```{r variable_importance}
 library(caret)
 data("rf_fit")
 variableimprtance <- varImp(rf_fit)$importance %>% fix_data_frame()
 variableimprtance  %>% 
-  arrange(-Overall)  %>% 
+  arrange(desc(Overall))  %>% 
   slice(1:10)  %>% 
   # Fix: Manually specify levels to make sure labels are always correct
   mutate(term = factor(term, levels = term,
                        labels = c("Time Since Last Delay", "Temperature", 
                                   "Wind Speed", "1AM", "Visibility", 
                                   "NE Corridor Line", "4AM", "Coast Line", 
-                                  "Departure: Tuesday", "Departure: Wednesday"))
-         )  %>%
+                                  "Departure: Tuesday", "Departure: Wednesday")))  %>%
+  mutate(term = factor(term, levels = rev(levels(term)))) %>% 
   ggplot(aes(term, Overall)) + 
   geom_bar(stat = 'identity') + 
   theme_classic() + 
@@ -41,7 +41,7 @@ variableimprtance  %>%
 ```
 
 # Testing ROC plot
-```{r}
+```{r roc_plot}
 library(pROC)
 data("training_data")
 model_predictions <- predict(rf_fit, testing,type = "prob" )
@@ -61,23 +61,26 @@ roc_df %>%
   scale_y_continuous(expand = c(0, 0))
 ```
 
-```{r}
+# Example exploratory analysis plots  
+
+```{r exp_analysis}
 data("njt_features")
 njt_features <- njt_features %>% mutate(is_delayed = factor(is_delayed, levels = c(TRUE,FALSE), labels = c("Yes","No")))
 feat_ex <- njt_features %>% filter(Line == "CORRIDOR")
-# bywday <- feat_ex %>% 
-#   count(Line, dep_wday, is_delayed) %>% 
-#   spread(is_delayed,n) %>% 
-#   transmute(pct_delays = Yes/(No+Yes)*100,
-#          feat = dep_wday,
-#          type = "Day of Week")
+
+bywday <- feat_ex %>% 
+  count(Line, dep_wday, is_delayed) %>% 
+  spread(is_delayed, n) %>% 
+  transmute(pct_delays = Yes/(No+Yes)*100,
+         feat = dep_wday,
+         type = "Day of Week")
+
 byhour <- feat_ex %>% 
   count(dep_hour, is_delayed) %>% 
-  spread(is_delayed,n) %>% 
+  spread(is_delayed, n) %>% 
   transmute(pct_delays = Yes/(No+Yes)*100,
          feat = as.character(dep_hour),
          type = "Hour of Day")
-
 
 timetolast <- feat_ex %>% group_by(Line) %>%
   mutate(bin = cut(ttl_line, 
@@ -85,7 +88,7 @@ timetolast <- feat_ex %>% group_by(Line) %>%
                    include.lowest = TRUE,
                    labels = c("<30", "30-60", "60-90", "90-120", ">120")) ) %>% 
   count(bin, is_delayed) %>% 
-  spread(is_delayed,n) %>% 
+  spread(is_delayed, n) %>% 
   transmute(pct_delays = Yes/(No+Yes)*100,
          feat = bin,
          type = "Time Since\nLast Delay")
@@ -101,22 +104,32 @@ bytemp <- feat_ex %>% group_by(Line) %>%
          feat = bin,
          type = "Temperature")
 
-# 
-# bywind <- feat_ex %>% group_by(Line) %>%
-#   mutate(bin = cut(WindSpeed, 
-#                    breaks = c(0,15,30,60),
-#                    include.lowest = TRUE)) %>% 
-#                    # labels = c("<15mph", "15-30", "30-45",">45mph"))) %>% 
-#   count(bin, is_delayed) %>% 
-#   spread(is_delayed,n) %>% 
-#   transmute(pct_delays = Yes/(No+Yes)*100,
-#          feat = bin,
-#          type = "Temperature")
+bywind <- feat_ex %>% group_by(Line) %>%
+  mutate(bin = cut(WindSpeed, 
+                   breaks = c(0,15,30,60),
+                   include.lowest = TRUE)) %>% 
+                   # labels = c("<15mph", "15-30", "30-45",">45mph"))) %>% 
+  count(bin, is_delayed) %>% 
+  spread(is_delayed,n) %>% 
+  transmute(pct_delays = Yes/(No+Yes)*100,
+         feat = bin,
+         type = "Temperature")
 
-baseline <- feat_ex %>% count(is_delayed, Line) %>% spread(is_delayed, n) %>% mutate(pct_delays = Yes/ (No + Yes) * 100) %>% .$pct_delays
+# Baseline probability of delay
+baseline <- feat_ex %>% 
+  count(is_delayed, Line) %>% 
+  spread(is_delayed, n) %>% 
+  mutate(pct_delays = Yes/ (No + Yes) * 100) %>%
+  .$pct_delays
 
-rbind(timetolast, byhour, bytemp, bywday) %>% ggplot(aes(feat, pct_delays)) + geom_bar(stat = "identity") + facet_wrap(~type, scale = "free") + geom_hline(yintercept=baseline, color = "red", size = 1, linetype = 2) + theme_minimal() + xlab("") + ylab("% of Trains Delayed")
-
+rbind(timetolast, byhour, bytemp, bywday) %>% 
+  ggplot(aes(feat, pct_delays)) + 
+  geom_bar(stat = "identity") + 
+  facet_wrap(~type, scale = "free") + 
+  geom_hline(yintercept=baseline, color = "red", size = 1, linetype = 2) + 
+  theme_minimal() + 
+  xlab("") + 
+  ylab("% of Trains Delayed")
 
 ```
 
