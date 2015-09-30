@@ -32,11 +32,15 @@ variableimprtance  %>%
                                   "Departure: Tuesday", "Departure: Wednesday")))  %>%
   mutate(term = factor(term, levels = rev(levels(term)))) %>% 
   ggplot(aes(term, Overall)) + 
-  geom_bar(stat = 'identity') + 
+  geom_bar(stat = 'identity', fill = "orange3", width = .7) + 
   theme_classic() + 
   coord_flip() + 
   xlab("") + 
-  ylab("Variable Importance %")
+  ylab("Variable Importance %") +
+  # scale_x_discrete(expand = c(0, 0)) + #Fix the 0 offset
+  scale_y_continuous(expand = c(0, 0)) +
+  theme(axis.text=element_text(size=18),
+        axis.title = element_text(size=18))
 
 ```
 
@@ -131,5 +135,18 @@ rbind(timetolast, byhour, bytemp, bywday) %>%
   xlab("") + 
   ylab("% of Trains Delayed")
 
+```
+
+# Compare Models
+```{r}
+data(list = list("glmnet_fit","rf_fit","knn_fit","gbm_fit"))
+resamps <- resamples(list(
+  "Logistic Regression" = logit_fit, 
+  "Regularized Regression" = glmnet_fit, 
+  "Random Forest" = rf_fit, 
+  "K-Nearest Neighbors" = knn_fit,
+  "Gradient Boosted Model" = gbm_fit))
+diff(resamps)  %>% summary
+bwplot(resamps, layout = c(3, 1))
 ```
 
