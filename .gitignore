@@ -3,7 +3,6 @@
 .RData
 tmp/
 *_cache/
-*html*
 *njt_data/
 *weather/
 apiconfig.R
