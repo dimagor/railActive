@@ -1,0 +1,87 @@
+---
+title: "Comparison of Delay Cutoffs"
+author: "Dmitriy Gorenshteyn"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, echo=FALSE, message=FALSE, warning=FALSE}
+library(dplyr)
+# library(njtPredict)
+library(lubridate)
+library(ggplot2)
+library(tidyr)
+library(knitr)
+library(caret)
+# devtools::load_all() #Toggle if not in the mood to rebuild after change
+data("njt_features")
+
+opts_chunk$set(echo = TRUE,
+               message = FALSE,
+               prompt = FALSE,
+               warning = FALSE,
+               cache = TRUE)
+```
+
+
+```{r prep}
+set.seed(42)
+tr_data <- njt_features %>% 
+  ungroup %>% 
+  # Need to remove these fields for the complete.cases function (these aren't used as features) 
+  select(-Actual_End_Time, -delay_length, -ttl_dep_arv_line)
+
+tr_data <- tr_data[complete.cases(tr_data), ] #Removes only about 8K entries
+
+# Register the # of cores to use
+library(doMC)
+registerDoMC(cores = 7)
+
+# Specify a fixed control object for accurate comparison between samples
+train_control <- trainControl(method = "repeatedcv",
+                              number = 5,
+                              repeats = 5,
+                              ## Estimate class probabilities
+                              classProbs = TRUE,
+                              ## Evaluate performance using 
+                              ## the following function
+                              summaryFunction = twoClassSummary)
+
+line_formula <- Class ~ Line +
+  as.character(dep_hour) + 
+  as.character(dep_wday) +
+  as.character(dep_mon) + 
+  ttl_line +
+  Temp_F + 
+  Visibility + 
+  WindSpeed
+
+
+```
+
+```{r model_train, eval = FALSE}
+runDelayRF <- function(delay_thresh){
+  tr_data <- njt_features %>% 
+    ungroup %>% 
+    mutate(is_delayed = delay_length >= delay_thresh | is.na(delay_length),
+           Line = gsub(" " , "_", Line)) %>%
+    mutate(is_delayed = factor(is_delayed, levels = c(TRUE,FALSE), labels = c("Yes","No")))
+  
+  # Using downsampling per "Line" to account for the Unbalanced training data
+  data_downsampled <- tr_data %>% group_by(Line) %>% do(downSample(., .$is_delayed))
+
+  rf_fit <- train(line_formula,
+                  data = data_downsampled,
+                  tuneLength = 5,
+                  trControl = train_control,
+                  metric = "ROC", 
+                  method = "rf",
+                  ntree = 80)
+  return(rf_fit)
+}
+
+intervals <- c(seq(6,20,2),30)
+names(intervals) <- paste0("n_",intervals)
+cutoff_compare <- lapply(intervals, runDelayRF)
+resamp <- resamples(cutoff_compare)
+```
