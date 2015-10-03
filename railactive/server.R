@@ -36,7 +36,7 @@ shinyServer(function(input, output, session) {
 
   # Query ttld service for list of previous delays
   getTTLD <- reactive({
-    read.csv("http://52.88.4.39/ttld_log.txt") # Hosted on aws with elastic ip
+    read.csv(file = "ttld_tracker/ttld_log.txt") # Hosted on aws with elastic ip
   })
 
   # Build a weather dataframe for the next 12 hours
