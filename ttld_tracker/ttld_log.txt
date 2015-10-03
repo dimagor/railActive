@@ -1,1 +1,10 @@
-"Terminal","Scheduled_Start_Time","Line","STATUS","SEC_LATE","TRAIN_LINE","LINEABBREVIATION"
+"Terminal","Scheduled_Start_Time","Line","STATUS","TRAIN_LINE","LINEABBREVIATION","SEC_LATE"
+"PH",2015-10-03 11:33:00,"AMTK"," ","Northeast Corridor Line","AMTK",882.30341553688
+"HB",2015-09-27 06:19:00,"BERG"," ","Bergen County Line","BERG",778.67095375061
+"SF",2015-09-29 18:28:30,"MAIN","All Aboard","Main Line","MAIN",811.082438707352
+"DO",2015-09-29 19:39:00,"M&E","All Aboard","Morris & Essex Line","M&E",1003.86829137802
+"DO",2015-10-02 20:51:45,"MNBTN","All Aboard","Montclair-Boonton Line","MNBTN",685.690701007843
+"NY",2015-09-29 17:54:00,"NEC","ALL ABOARD","Northeast Corridor Line","NEC",983.256202459335
+"LB",2015-10-02 19:30:00,"NJCL","All Aboard","North Jersey Coast Line","NJCL",716.220092535019
+"RA",2015-09-28 20:29:45,"RARV","All Aboard","Raritan Valley Line","RARV",908.81819653511
+"TR",2015-10-02 19:09:00,"SEPTA","in -4 Min","Northeast Corridor Line","SEPTA",1408.61620497704
