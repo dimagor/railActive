@@ -30,8 +30,19 @@ queryNJTapi <- function(station){
 </soap:Envelope>' 'http://traindata.njtransit.com:8090/NJTTrainData.asmx?wsdl'
 "
   cmd <- sprintf(base_cmd, njt_username, njt_password, station)
-  ret_xml <- system(cmd, intern=TRUE)
-  ## line breaks removed
+
+  # Catch errors/warnings and return a blank data frame
+  ret_xml <- tryCatch(system(cmd, intern=TRUE),
+                      error = function(c) NULL,
+                      warning = function(c) NULL)
+
+
+  if(is.null(ret_xml)){
+    warning(paste("An issue occurred with querying NJTransit API with station",station))
+    return(data.frame(NULL))
+  }
+
+  # Remove linebreaks
   ret_xml <- paste0(ret_xml, collapse="")
 
   ret_json <- { XML::xmlToList(ret_xml) }$Body$getTrainScheduleJSONResponse$getTrainScheduleJSONResult
@@ -62,13 +73,23 @@ if(file.exists(ttld_file)){
 while(TRUE){
   # Query the NJT API
   print("Updating...")
-  results <- terminals %>% group_by(Terminal) %>% do(queryNJTapi(.$Terminal))
-  #Add the last delay events
-  results <- rbind(results,current_ttld)
+  results <- terminals %>%
+    group_by(Terminal) %>%
+    do(queryNJTapi(.$Terminal))
 
-  #Get the top delays that are more than 10 Minute
-  current_ttld <- results  %>% group_by(Line)  %>% filter(SEC_LATE >= 600 | STATUS == "Cancelled")  %>% arrange(desc(Scheduled_Start_Time))  %>% slice(1)
-  #Save file
-  write.csv(current_ttld, file = ttld_file, row.names = FALSE)
+  # Execute if previous function succeeded
+  if(length(results)>1){
+    #Add the last delay events
+    results <- rbind(results,current_ttld)
+
+    #Get the top delays that are more than 10 Minute
+    current_ttld <- results  %>%
+      group_by(Line) %>%
+      filter(SEC_LATE >= 600 | STATUS == "Cancelled") %>%
+      arrange(desc(Scheduled_Start_Time)) %>%
+      slice(1)
+    #Save file
+    write.csv(current_ttld, file = ttld_file, row.names = FALSE)
+  }
   Sys.sleep(delay)
 }
