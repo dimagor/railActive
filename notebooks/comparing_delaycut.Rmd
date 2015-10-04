@@ -80,8 +80,28 @@ runDelayRF <- function(delay_thresh){
   return(rf_fit)
 }
 
-intervals <- c(seq(6,20,2),30)
+intervals <- seq(6,16,2)
 names(intervals) <- paste0("n_",intervals)
-cutoff_compare <- lapply(intervals, runDelayRF)
+cutoff_compare <- lapply(intervals, tryCatch(runDelayRF,
+                                             error = function(c) NULL))
 resamp <- resamples(cutoff_compare)
 ```
+
+```{r}
+resamps_df <- resamp$values %>% 
+  gather(method_metric, value, -Resample) %>% 
+  separate(method_metric, c("method","metric"),sep = "~") %>% 
+  rowwise() %>% 
+  mutate(method = as.numeric(gsub("n_","", method)))
+
+resamps_df %>% 
+  ggplot(aes(factor(method), value)) + 
+  geom_boxplot() + 
+  facet_wrap(~metric) + 
+  theme_bw() +
+  xlab("Delay Cutoff (Minutes)") +
+  ylab("")
+saveRDS(resamps_df, file = "data/delayed_cutoffcompare.rds")
+# bwplot(resamp, layout = c(3, 1))
+```
+

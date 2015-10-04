@@ -151,3 +151,18 @@ diff(resamps)  %>% summary
 bwplot(resamps, layout = c(3, 1))
 ```
 
+# Supplemental  
+
+## Checking for Robustness to Delay Cutoffs  
+```{r}
+cutoff_df <- readRDS(file = "data/delayed_cutoffcompare.rds")
+cutoff_df %>% 
+  ggplot(aes(factor(method), value)) + 
+  geom_boxplot() + 
+  facet_wrap(~metric) + 
+  theme_bw() +
+  xlab("Delay Cutoff (Minutes)") +
+  ylab("")
+
+```
+
