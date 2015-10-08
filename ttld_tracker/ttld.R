@@ -33,8 +33,7 @@ queryNJTapi <- function(station){
 
   # Catch errors/warnings and return a blank data frame
   ret_xml <- tryCatch(system(cmd, intern=TRUE),
-                      error = function(c) NULL,
-                      warning = function(c) NULL)
+                      error = function(c) NULL)
 
 
   if(is.null(ret_xml)){
