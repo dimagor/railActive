@@ -154,8 +154,8 @@ resamps <- resamples(list(
   "Logistic Regression" = logit_fit, 
   "Regularized Regression" = glmnet_fit, 
   "Random Forest" = rf_fit, 
-  "K-Nearest Neighbors" = knn_fit))
-# "Naive Bayes" = nb_fit))
+  "K-Nearest Neighbors" = knn_fit,
+  "Naive Bayes" = nb_fit))
 diff(resamps)  %>% summary
 bwplot(resamps, layout = c(3, 1))
 ```
@@ -298,3 +298,13 @@ formula_byline <- Class ~
   WindSpeed
 results_ho_byline <- data_downsampled %>% group_by(Line) %>% do(testModelHoldout(.,tr_ctrl, method = "rf", formula_byline, ntree = 80))
 ```
+
+```{r}
+ts_testing <- tr_data %>% filter(Scheduled_Start_Time >= 2015-01-01)
+ts_train_full <- tr_data %>% filter(Run_Date < 2015-01-01)
+in_train <- 
+training <- data_downsampled[in_train, ]
+testing <- data_downsampled[-in_train, ]
+
+```
+
