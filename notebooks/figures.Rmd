@@ -141,12 +141,14 @@ rbind(timetolast, byhour, bytemp, bywday) %>%
 
 # Compare Models
 ```{r}
-data(list = list("glmnet_fit","rf_fit","knn_fit", "gbm_fit"))
+data(list = list("glmnet_fit","rf_fit","knn_fit", "gbm_fit", "logit_f"))
+
 resamps <- resamples(list(
   "Logistic Regression" = logit_fit, 
   "Regularized Regression" = glmnet_fit, 
   "Random Forest" = rf_fit, 
   "K-Nearest Neighbors" = knn_fit))
+  # "Gradient Boosting Machine" = gbm_fit))
 diff(resamps)  %>% summary
 bwplot(resamps, layout = c(3, 1))
 ```
