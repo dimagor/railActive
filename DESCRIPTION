@@ -1,7 +1,7 @@
 Package: railActive
 Title: Dashboard for Predicting Delays for NJ Transit Trains
 Version: 0.0.0.9000
-Authors@R: person("Dmitriy", "Gorenshteyn", email = "dgorenshteyn@gmail.com", role = c("aut", "cre"))
+Authors@R: person("Dmitriy", "Gorenshteyn", email = "MASKED@gmail.com", role = c("aut", "cre"))
 Description: Analaysis & prediction of NJ Transit data
 Depends: R (>= 3.2.2)
 License: What license is it under?
